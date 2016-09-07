@@ -71,6 +71,25 @@ func home(q *Context) {
 	// DEBUG: HTML-uitvoer van de query
 	fmt.Fprint(q.w, "<div style=\"font-family:monospace\">\n", html.EscapeString(query), "\n</div><p>\n")
 
+	qs := make_query_string(
+		first(q.r, "word"),
+		first(q.r, "postag"),
+		first(q.r, "rel"),
+		first(q.r, "hpostag"),
+		first(q.r, "hword"),
+		first(q.r, "meta"),
+		first(q.r, "db"))
+	fmt.Fprintf(q.w, `Aantal gevonden zinnen: <span id="tel"><img src="busy.gif" alt="aan het werk..."></span><p>
+<script type="text/javascript"><!--
+$.ajax("statstel?%s")
+      .done(function(data) {
+        $("#tel").html(data);
+      }).fail(function(e) {
+        $("#tel").html(escapeHtml(e.responseText));
+      });
+</script>
+`, qs)
+
 	fmt.Fprint(q.w, "<div id=\"busy1\"><img src=\"busy.gif\" alt=\"aan het werk...\"></div>\n")
 
 	if ff, ok := q.w.(http.Flusher); ok {
@@ -293,21 +312,9 @@ func home(q *Context) {
 	}
 	fmt.Fprint(q.w, "</ol>\n<p>\n")
 
-	if offset == 0 && len(zinnen) == 0 {
-		fmt.Fprintln(q.w, "geen match gevonden")
-	}
-
 	defer html_footer(q)
 
 	// Links naar volgende en vorige pagina's met resultaten
-	qs := make_query_string(
-		first(q.r, "word"),
-		first(q.r, "postag"),
-		first(q.r, "rel"),
-		first(q.r, "hpostag"),
-		first(q.r, "hword"),
-		first(q.r, "meta"),
-		first(q.r, "db"))
 	if offset > 0 || len(zinnen) == zinmax {
 		if offset > 0 {
 			fmt.Fprintf(q.w, "<a href=\"?%s&amp;offset=%d\">vorige</a>", qs, offset-zinmax)

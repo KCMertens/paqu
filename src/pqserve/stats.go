@@ -115,6 +115,80 @@ func (s *StatSorter) Less(i, j int) bool {
 	return false
 }
 
+func statstel(q *Context) {
+
+	var chClose <-chan bool
+	if f, ok := q.w.(http.CloseNotifier); ok {
+		chClose = f.CloseNotify()
+	} else {
+		chClose = make(<-chan bool)
+	}
+
+	option := make(map[string]string)
+	for _, t := range []string{"word", "postag", "rel", "hpostag", "hword", "meta"} {
+		option[t] = first(q.r, t)
+	}
+	if option["word"] == "" && option["postag"] == "" && option["rel"] == "" &&
+		option["hpostag"] == "" && option["hword"] == "" && option["meta"] == "" {
+		http.Error(q.w, "Query ontbreekt", http.StatusPreconditionFailed)
+		return
+	}
+
+	prefix := first(q.r, "db")
+	if prefix == "" {
+		http.Error(q.w, "Geen corpus opgegeven", http.StatusPreconditionFailed)
+		return
+	}
+	if !q.prefixes[prefix] {
+		http.Error(q.w, "Ongeldig corpus", http.StatusPreconditionFailed)
+		return
+	}
+
+	query, joins, usererr, syserr := makeQuery(q, prefix, "", chClose)
+	if syserr != nil {
+		http.Error(q.w, syserr.Error(), http.StatusInternalServerError)
+		logerr(syserr)
+		return
+	}
+	if usererr != nil {
+		http.Error(q.w, usererr.Error(), http.StatusPreconditionFailed)
+		return
+	}
+
+	// BEGIN UITVOER
+
+	q.w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	cache(q)
+
+	// Aantal zinnen die matchen met de query
+	select {
+	case <-chClose:
+		logerr(errConnectionClosed)
+		return
+	default:
+	}
+	// TODO: kan dit niet sneller, met een DISTINCT en een COUNT?
+	rows, err := timeoutQuery(q, chClose, "SELECT DISTINCT `arch`,`file` FROM `"+Cfg.Prefix+"_c_"+prefix+"_deprel` "+joins+" WHERE "+
+		query)
+	if err != nil {
+		fmt.Fprintln(q.w, "ERROR:", html.EscapeString(err.Error()))
+		logerr(err)
+		return
+	}
+	counter := 0
+	for rows.Next() {
+		counter++
+	}
+	if err != nil {
+		fmt.Fprintln(q.w, "ERROR:", html.EscapeString(err.Error()))
+		logerr(err)
+		return
+	}
+
+	fmt.Fprintln(q.w, iformat(counter))
+
+}
+
 func stats(q *Context) {
 
 	var buf bytes.Buffer
@@ -193,41 +267,6 @@ window.parent._fn.started();
 	// DEBUG: HTML-uitvoer van de query
 	if !download {
 		fmt.Fprint(&buf, "<div style=\"font-family:monospace\">\n", html.EscapeString(query), "\n</div><p>\n")
-		updateText(q, buf.String())
-		buf.Reset()
-	}
-
-	// Aantal zinnen die matchen met de query
-	select {
-	case <-chClose:
-		logerr(errConnectionClosed)
-		return
-	default:
-	}
-	// TODO: kan dit niet sneller, met een DISTINCT en een COUNT?
-	rows, err := timeoutQuery(q, chClose, "SELECT DISTINCT `arch`,`file` FROM `"+Cfg.Prefix+"_c_"+prefix+"_deprel` "+joins+" WHERE "+
-		query)
-	if err != nil {
-		updateError(q, err, !download)
-		completed(q, download)
-		logerr(err)
-		return
-	}
-	counter := 0
-	for rows.Next() {
-		counter++
-	}
-	if err != nil {
-		updateError(q, err, !download)
-		completed(q, download)
-		logerr(err)
-		return
-	}
-
-	if download {
-		fmt.Fprintf(q.w, "# %d zinnen\t\n", counter)
-	} else {
-		fmt.Fprintln(&buf, "Aantal gevonden zinnen:", iformat(counter))
 		updateText(q, buf.String())
 		buf.Reset()
 	}
