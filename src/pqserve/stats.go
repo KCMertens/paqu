@@ -171,7 +171,7 @@ func statstel(q *Context) {
 	rows, err := timeoutQuery(q, chClose, "SELECT DISTINCT `arch`,`file` FROM `"+Cfg.Prefix+"_c_"+prefix+"_deprel` "+joins+" WHERE "+
 		query)
 	if err != nil {
-		fmt.Fprintln(q.w, "ERROR:", html.EscapeString(err.Error()))
+		fmt.Fprintln(q.w, html.EscapeString(err.Error()))
 		logerr(err)
 		return
 	}
@@ -179,8 +179,8 @@ func statstel(q *Context) {
 	for rows.Next() {
 		counter++
 	}
-	if err != nil {
-		fmt.Fprintln(q.w, "ERROR:", html.EscapeString(err.Error()))
+	if err := rows.Err(); err != nil {
+		fmt.Fprintln(q.w, html.EscapeString(err.Error()))
 		logerr(err)
 		return
 	}
