@@ -168,7 +168,11 @@ func statstel(q *Context) {
 	default:
 	}
 	// TODO: kan dit niet sneller, met een DISTINCT en een COUNT?
-	rows, err := timeoutQuery(q, chClose, "SELECT DISTINCT `arch`,`file` FROM `"+Cfg.Prefix+"_c_"+prefix+"_deprel` "+joins+" WHERE "+
+	distinct := ""
+	if first(q.r, "t") == "2" {
+		distinct = "DISTINCT"
+	}
+	rows, err := timeoutQuery(q, chClose, "SELECT "+distinct+" `arch`,`file` FROM `"+Cfg.Prefix+"_c_"+prefix+"_deprel` "+joins+" WHERE "+
 		query)
 	if err != nil {
 		fmt.Fprintln(q.w, html.EscapeString(err.Error()))

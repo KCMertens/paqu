@@ -71,25 +71,6 @@ func home(q *Context) {
 	// DEBUG: HTML-uitvoer van de query
 	fmt.Fprint(q.w, "<div style=\"font-family:monospace\">\n", html.EscapeString(query), "\n</div><p>\n")
 
-	qs := make_query_string(
-		first(q.r, "word"),
-		first(q.r, "postag"),
-		first(q.r, "rel"),
-		first(q.r, "hpostag"),
-		first(q.r, "hword"),
-		first(q.r, "meta"),
-		first(q.r, "db"))
-	fmt.Fprintf(q.w, `Aantal gevonden zinnen: <span id="tel"><img src="busy.gif" alt="aan het werk..."></span><p>
-<script type="text/javascript"><!--
-$.ajax("statstel?%s")
-      .done(function(data) {
-        $("#tel").html(data);
-      }).fail(function(e) {
-        $("#tel").html(escapeHtml(e.responseText));
-      });
-</script>
-`, qs)
-
 	fmt.Fprint(q.w, "<div id=\"busy1\"><img src=\"busy.gif\" alt=\"aan het werk...\"></div>\n")
 
 	if ff, ok := q.w.(http.Flusher); ok {
@@ -312,9 +293,21 @@ $.ajax("statstel?%s")
 	}
 	fmt.Fprint(q.w, "</ol>\n<p>\n")
 
+	if offset == 0 && len(zinnen) == 0 {
+		fmt.Fprintln(q.w, "geen match gevonden")
+	}
+
 	defer html_footer(q)
 
 	// Links naar volgende en vorige pagina's met resultaten
+	qs := make_query_string(
+		first(q.r, "word"),
+		first(q.r, "postag"),
+		first(q.r, "rel"),
+		first(q.r, "hpostag"),
+		first(q.r, "hword"),
+		first(q.r, "meta"),
+		first(q.r, "db"))
 	if offset > 0 || len(zinnen) == zinmax {
 		if offset > 0 {
 			fmt.Fprintf(q.w, "<a href=\"?%s&amp;offset=%d\">vorige</a>", qs, offset-zinmax)
@@ -396,22 +389,22 @@ $.ajax("statstel?%s")
 
 	// Links naar statistieken
 	fmt.Fprintf(q.w, `<hr><p>
-		<div id="stats">
-		<div id="inner">
-		<form action="stats" target="sframe">
-		<input type="hidden" name="word" value="%s">
-		<input type="hidden" name="postag" value="%s">
-		<input type="hidden" name="rel" value="%s">
-		<input type="hidden" name="hpostag" value="%s">
-		<input type="hidden" name="hword" value="%s">
-		<input type="hidden" name="meta" value="%s">
-		<input type="hidden" name="db" value="%s">
-		<input type="submit" value="tellingen &mdash; algemeen">
-		</form>
-		</div>
+        <div id="stats">
+        <div id="inner">
+        <form action="stats" target="sframe">
+        <input type="hidden" name="word" value="%s">
+        <input type="hidden" name="postag" value="%s">
+        <input type="hidden" name="rel" value="%s">
+        <input type="hidden" name="hpostag" value="%s">
+        <input type="hidden" name="hword" value="%s">
+        <input type="hidden" name="meta" value="%s">
+        <input type="hidden" name="db" value="%s">
+        <input type="submit" value="tellingen &mdash; algemeen">
+        </form>
+        </div>
         <img src="busy.gif" id="busy" class="hide" alt="aan het werk...">
-		</div>
-		<iframe src="leeg.html" name="sframe" class="hide"></iframe>
+        </div>
+        <iframe src="leeg.html" name="sframe" class="hide"></iframe>
 `,
 		html.EscapeString(first(q.r, "word")),
 		html.EscapeString(first(q.r, "postag")),
@@ -421,63 +414,34 @@ $.ajax("statstel?%s")
 		html.EscapeString(first(q.r, "meta")),
 		html.EscapeString(prefix))
 
-	if q.hasmeta[prefix] {
-		metahelp(q)
-		fmt.Fprintf(q.w, `<p>
-		<div id="statsmeta">
-		<div id="innermeta">
-		<form action="statsmeta" target="sframemeta">
-		<input type="hidden" name="word" value="%s">
-		<input type="hidden" name="postag" value="%s">
-		<input type="hidden" name="rel" value="%s">
-		<input type="hidden" name="hpostag" value="%s">
-		<input type="hidden" name="hword" value="%s">
-		<input type="hidden" name="meta" value="%s">
-		<input type="hidden" name="db" value="%s">
-		<input type="submit" value="tellingen &mdash; metadata">
-		</form>
-		</div>
-        <img src="busy.gif" id="busymeta" class="hide" alt="aan het werk...">
-		</div>
-		<iframe src="leeg.html" name="sframemeta" class="hide"></iframe>
-`,
-			html.EscapeString(first(q.r, "word")),
-			html.EscapeString(first(q.r, "postag")),
-			html.EscapeString(first(q.r, "rel")),
-			html.EscapeString(first(q.r, "hpostag")),
-			html.EscapeString(first(q.r, "hword")),
-			html.EscapeString(first(q.r, "meta")),
-			html.EscapeString(prefix))
-	}
-
 	fmt.Fprintf(q.w, `<p>
-		<div id="statsrel">
-		<form action="javascript:$.fn.statsrel()" name="statsrelform" id="statsrelform">
-		<input type="hidden" name="word" value="%s">
-		<input type="hidden" name="postag" value="%s">
-		<input type="hidden" name="rel" value="%s">
-		<input type="hidden" name="hpostag" value="%s">
-		<input type="hidden" name="hword" value="%s">
-		<input type="hidden" name="meta" value="%s">
-		<input type="hidden" name="db" value="%s">
-		Selecteer twee of meer elementen om ze te koppelen:
-		<p>
-		<table>
-		<tr style="vertical-align:top"><td>
-		<table>
-		<tr>
-		  <td style="background-color: yellow"><input type="checkbox" name="cword" value="1">woord
-		  <td>
-		  <td style="background-color: lightgreen"><input type="checkbox" name="chword" value="1">hoofdwoord
-		<tr>
-		  <td><input type="checkbox" name="clemma" value="1">lemma
-		  <td><input type="checkbox" name="crel" value="1">relatie
-		  <td><input type="checkbox" name="chlemma" value="1">lemma
-		<tr>
-		  <td><input type="checkbox" name="cpostag" value="1">postag
-		  <td>
-		  <td><input type="checkbox" name="chpostag" value="1">postag
-		</table>
+        <div id="statsrel">
+        <form action="javascript:$.fn.statsrel()" name="statsrelform" id="statsrelform">
+        <input type="hidden" name="word" value="%s">
+        <input type="hidden" name="postag" value="%s">
+        <input type="hidden" name="rel" value="%s">
+        <input type="hidden" name="hpostag" value="%s">
+        <input type="hidden" name="hword" value="%s">
+        <input type="hidden" name="meta" value="%s">
+        <input type="hidden" name="db" value="%s">
+        Selecteer een of meer elementen:
+        <p>
+        <table>
+        <tr style="vertical-align:top"><td>
+        <table>
+        <tr>
+          <td style="background-color: yellow"><input type="checkbox" name="cword" value="1">woord
+          <td>
+          <td style="background-color: lightgreen"><input type="checkbox" name="chword" value="1">hoofdwoord
+        <tr>
+          <td><input type="checkbox" name="clemma" value="1">lemma
+          <td><input type="checkbox" name="crel" value="1">relatie
+          <td><input type="checkbox" name="chlemma" value="1">lemma
+        <tr>
+          <td><input type="checkbox" name="cpostag" value="1">postag
+          <td>
+          <td><input type="checkbox" name="chpostag" value="1">postag
+        </table>
         <td>
 `,
 		html.EscapeString(first(q.r, "word")),
@@ -496,13 +460,20 @@ $.ajax("statstel?%s")
 
 	fmt.Fprint(q.w, `
         </table>
-		<p>
-		<input type="submit" id="statsrelsubmit" value="tellingen van combinaties">
-		</form>
-		<p>
-		<div id="statresults">
-		</div>
-		</div>
+        <p>
+        <input type="submit" id="statsrelsubmit" value="doe telling">
+        </form>
+        <p>
+        <div id="statstel" class="hide">
+            <table>
+            <tr><td>items:<td class="right" id="statstel1"><img src="busy.gif" alt="aan het werk...">
+            <tr><td>zinnen:<td class="right" id="statstel2"><img src="busy.gif" alt="aan het werk...">
+            </table>
+            </div>
+        <p>
+        <div id="statresults">
+        </div>
+        </div>
 <script type="text/javascript"><!--
   function statsrelformcheck() {
     var f = document.forms["statsrelform"];
@@ -523,7 +494,7 @@ $.ajax("statstel?%s")
         }
       }
     }
-    if (n <  2) {
+    if (n <  1) {
       $('#statsrelsubmit').prop('disabled', true);
     } else {
       $('#statsrelsubmit').prop('disabled', false);
@@ -566,6 +537,14 @@ func make_query_string(word, postag, rel, hpostag, hword, meta, db string) strin
 //. HTML
 
 func html_header(q *Context) {
+	qs := make_query_string(
+		first(q.r, "word"),
+		first(q.r, "postag"),
+		first(q.r, "rel"),
+		first(q.r, "hpostag"),
+		first(q.r, "hword"),
+		first(q.r, "meta"),
+		first(q.r, "db"))
 	fmt.Fprint(q.w, `
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript"><!--
@@ -680,7 +659,6 @@ func html_header(q *Context) {
   var result;
   var resultmeta;
   var busy;
-  var busymeta;
   var metadn = 0;
   var metavars = [];
 
@@ -694,34 +672,6 @@ func html_header(q *Context) {
     },
     completed: function() {
       busy.addClass('hide');
-    },
-    setmetaval: function(value) {
-      metadn = value;
-    },
-    setmetavars: function(idx, lbl, fl, max, ac, bc) {
-      metavars[idx] = {};
-      metavars[idx].lbl = lbl;
-      metavars[idx].fl = fl;
-      metavars[idx].max = max;
-      metavars[idx].ac = ac;
-      metavars[idx].bc = bc;
-    },
-    setmetalines: function(idx, a, b) {
-      metavars[idx].a = a;
-      metavars[idx].b = b;
-    },
-    makemetatable: function(idx) {
-      fillMeta(idx);
-    },
-    updatemeta: function(data) {
-      resultmeta.append(data);
-    },
-    startedmeta: function() {
-      resultmeta.html('');
-      busymeta.removeClass('hide');
-    },
-    completedmeta: function() {
-      busymeta.addClass('hide');
     }
   }
 
@@ -776,6 +726,7 @@ func html_header(q *Context) {
   var lastcall = null;
   var statsreldata;
   var statsrelcol = 0;
+  var firsttime = true;
   $.fn.statsrel = function() {
     if (lastcall) {
       try {
@@ -783,8 +734,66 @@ func html_header(q *Context) {
       }
       catch(err) {}
     }
+    if (firsttime) {
+        firsttime = false;
+        $('#statstel').removeClass('hide');
+        $.ajax("statstel?t=1&amp;`+qs+`")
+          .done(function(data) {
+            $("#statstel1").html(data);
+          }).fail(function(e) {
+            $("#statstel1").html(escapeHtml(e.responseText));
+          });
+        $.ajax("statstel?t=2&amp;`+qs+`")
+          .done(function(data) {
+            $("#statstel2").html(data);
+          }).fail(function(e) {
+            $("#statstel2").html(escapeHtml(e.responseText));
+          });
+    }
     $("#statresults").html('<img src="busy.gif">');
-    lastcall = $.ajax("statsrel?" + $(document.statsrelform).serialize())
+    if ($('#statsrelform input:checked').length == 1) {
+      if ($('#statsrelform input[name=cmeta]:checked').length == 1) {
+        var val = $('#statsrelform input[name=cmeta]:checked')[0].value;
+        lastcall = $.ajax("statsmeta?item=" + val + "&amp;" + $(document.statsrelform).serialize())
+        .done(function(data) {
+          var e = $("#statresults");
+          e.html('<div style="font-family:monospace">' + escapeHtml(data.query) + '</div>\n' + 
+            '<p>\n' +
+            '<a href="javascript:void(0)" onclick="javascript:metahelp()">toelichting bij tabel</a>\n' +
+            '<p>\n' +
+            '<table>\n' +
+            '  <tr>\n' +
+            '   <td>per item:\n' +
+            '     <table class="right" id="meta0a">\n' +
+            '     </table>\n' +
+            '   <td class="next">per zin:\n' +
+            '     <table class="right" id="meta0b">\n' +
+            '     </table>\n' +
+            '</table>\n' +
+            '<hr>tijd: ' + data.tijd + '<p><a href="statsmeta?' + data.download + '">download</a>\n');
+          metadn = data.n;
+      	  metavars[0] = {};
+      	  metavars[0].lbl = data.value;
+      	  metavars[0].fl = data.fl;
+      	  metavars[0].max = data.max;
+      	  metavars[0].ac = data.ac;
+      	  metavars[0].bc = data.bc;
+          metavars[0].a = data.lines[0];
+          metavars[0].b = data.lines[1];
+          fillMeta(0);
+        }).fail(function(e) {
+          $("#statresults").html('<div class="error">Fout: ' + escapeHtml(e.responseText) + '</div>');
+        })
+        .always(function() {
+          lastcall = null;
+        });
+      } else {
+          $("#statresults").html('Telling van één item dat geen metadata is werkt nog niet.');
+          console.log("geen meta");
+      }
+    } else {
+      console.log("statsrel?" + $(document.statsrelform).serialize());
+      lastcall = $.ajax("statsrel?" + $(document.statsrelform).serialize())
       .done(function(data) {
         statsreldata = data;
         var e = $("#statresults");
@@ -803,6 +812,7 @@ func html_header(q *Context) {
       .always(function() {
         lastcall = null;
       });
+    }
   }
 
   function statrelset(c) {
@@ -829,26 +839,26 @@ func html_header(q *Context) {
         }
         for (i in statsreldata.isint) {
             if (i == c) { continue; }
-	        if (i == 0) {
-	            var r = b[0][1] - a[0][1];
-	            if (r != 0) { return r; }
-	        } else if (statsreldata.isint[i]) {
-	            var r = a[i][1] - b[i][1];
-	            if (r != 0) { return r; }
-	        } else {
-	            if (a[i][0] == "" && b[i][0] != "") {
-	                return 1;
-	            }
-	            if (a[i][0] != "" && b[i][0] == "") {
-	                return -1;
-	            }
-	            if (a[i][0] < b[i][0]) {
-	                return -1;
-	            }
-	            if (a[i][0] > b[i][0]) {
-	                return 1;
-	            }
-	        }
+            if (i == 0) {
+                var r = b[0][1] - a[0][1];
+                if (r != 0) { return r; }
+            } else if (statsreldata.isint[i]) {
+                var r = a[i][1] - b[i][1];
+                if (r != 0) { return r; }
+            } else {
+                if (a[i][0] == "" && b[i][0] != "") {
+                    return 1;
+                }
+                if (a[i][0] != "" && b[i][0] == "") {
+                    return -1;
+                }
+                if (a[i][0] < b[i][0]) {
+                    return -1;
+                }
+                if (a[i][0] > b[i][0]) {
+                    return 1;
+                }
+            }
         }
         return 0;
     });
@@ -912,8 +922,7 @@ func html_header(q *Context) {
   $(document).ready(function() {
     result = $('#inner');
     busy = $('#busy');
-    resultmeta = $('#innermeta');
-    busymeta = $('#busymeta');
+    resultmeta = $('#statresults');
   });
 
   //--></script>
@@ -966,37 +975,37 @@ corpus: <select name="db">
 		fmt.Fprintln(q.w, "<a href=\"corpuslijst\">meer/minder</a>")
 	}
 	fmt.Fprintf(q.w, `<p><table class="home">
-	   <tr>
-		 <td style="background-color: yellow">woord
-		 <td>
-		 <td style="background-color: lightgreen">hoofdwoord
-	   <tr>
-		 <td><input type="text" name="word" size="12" value="%s">
-	   `, html.EscapeString(first(q.r, "word")))
+       <tr>
+         <td style="background-color: yellow">woord
+         <td>
+         <td style="background-color: lightgreen">hoofdwoord
+       <tr>
+         <td><input type="text" name="word" size="12" value="%s">
+       `, html.EscapeString(first(q.r, "word")))
 	fmt.Fprint(q.w, `
-		 <td>
-		   <select name="rel">
-	   `)
+         <td>
+           <select name="rel">
+       `)
 	html_opts(q, opt_rel, first(q.r, "rel"), "relatie")
 	fmt.Fprintf(q.w, `
-		   </select>
-		 <td><input type="text" name="hword" size="12" value="%s">
-	   `, html.EscapeString(first(q.r, "hword")))
+           </select>
+         <td><input type="text" name="hword" size="12" value="%s">
+       `, html.EscapeString(first(q.r, "hword")))
 	fmt.Fprint(q.w, `
-	   <tr>
-		 <td>
-		   <select name="postag" style="width: 100%">
-	   `)
+       <tr>
+         <td>
+           <select name="postag" style="width: 100%">
+       `)
 	html_opts(q, opt_postag, first(q.r, "postag"), "postag")
 	fmt.Fprint(q.w, `
-		   </select>
-		 <td>
-		 <td>
-		   <select name="hpostag" style="width:100%" >
-	   `)
+           </select>
+         <td>
+         <td>
+           <select name="hpostag" style="width:100%" >
+       `)
 	html_opts(q, opt_hpostag, first(q.r, "hpostag"), "postag")
 	fmt.Fprint(q.w, `
-		   </select>
+           </select>
        <tr>
          <td colspan="3"><span class="ie">Metadata:<br></span>
            <textarea rows="3" cols="40" name="meta" placeholder="metadata">`+first(q.r, "meta")+`</textarea><br>
@@ -1013,15 +1022,15 @@ corpus: <select name="db">
 	}
 	fmt.Fprint(q.w, `
          </select>
-	   <tr>
-		 <td style="padding-top:1em">
-		   <input type="button" value="help" onClick="javascript:window.open('info.html')">
-		 <td colspan="2" class="right" style="padding-top:1em">
-		   <input type="submit" value="Zoeken">
-		   <input type="button" value="Wissen" onClick="javascript:formclear(form)">
-		   <input type="reset" value="Reset">
-	   </table>
-	   </form>
+       <tr>
+         <td style="padding-top:1em">
+           <input type="button" value="help" onClick="javascript:window.open('info.html')">
+         <td colspan="2" class="right" style="padding-top:1em">
+           <input type="submit" value="Zoeken">
+           <input type="button" value="Wissen" onClick="javascript:formclear(form)">
+           <input type="reset" value="Reset">
+       </table>
+       </form>
 <div class="submenu a9999" id="helpquery">
 <div class="queryhelp">
 <b>Voorbeelden van zoeken met metadata</b>
@@ -1057,7 +1066,7 @@ corpus: <select name="db">
 </div>
 </div>
 
-	   `)
+       `)
 
 	return
 }

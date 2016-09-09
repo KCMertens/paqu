@@ -673,3 +673,13 @@ f1(%q);
 		ff.Flush()
 	}
 }
+
+func completedmeta(q *Context, download bool) {
+	if download {
+		return
+	}
+	fmt.Fprintf(q.w, `<script type="text/javascript">
+window.parent._fn.completedmeta();
+</script>
+`)
+}

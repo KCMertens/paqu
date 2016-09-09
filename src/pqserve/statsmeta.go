@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
-	"html"
 	"math"
 	"net/http"
 	"strings"
@@ -27,10 +25,6 @@ func statsmeta(q *Context) {
 		if errval != nil {
 			updateError(q, errval, !download)
 		}
-		completedmeta(q, download)
-		if !download {
-			fmt.Fprintln(q.w, "</body>\n</html>")
-		}
 	}()
 
 	now := time.Now()
@@ -44,35 +38,10 @@ func statsmeta(q *Context) {
 		q.w.Header().Set("Content-Disposition", "attachment; filename=telling.txt")
 		cache(q)
 	} else {
-		q.w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		cache(q)
-		fmt.Fprint(q.w, `<!DOCTYPE html>
-<html>
-<head>
-<title></title>
-<script type="text/javascript"><!--
-function setvalue(n) {
-    window.parent._fn.setmetaval(n);
-}
-function setmetavars(idx, lbl, fl, max, ac, bc) {
-    window.parent._fn.setmetavars(idx, lbl, fl, max, ac, bc);
-}
-function setmetalines(idx, a, b) {
-    window.parent._fn.setmetalines(idx, a, b);
-}
-function makemetatable(idx) {
-    window.parent._fn.makemetatable(idx);
-}
-function f(s) {
-    window.parent._fn.updatemeta(s);
-}
-//--></script>
-</head>
-<body">
-<script type="text/javascript">
-window.parent._fn.startedmeta();
-</script>
-`)
+		fmt.Fprintln(q.w, "{")
+		defer fmt.Fprintln(q.w, "}")
 	}
 
 	option := make(map[string]string)
@@ -120,28 +89,21 @@ window.parent._fn.startedmeta();
 		pow10 = 10
 	}
 
-	var buf bytes.Buffer
-
 	// DEBUG: HTML-uitvoer van de query
 	if !download {
-		fmt.Fprintf(&buf, `
-<div style="font-family:monospace">%s</div>
-<p>
-<a href="javascript:void(0)" onclick="javascript:metahelp()">toelichting bij tabellen</a>
-<p>
-`, html.EscapeString(query))
-		updateText(q, buf.String())
-		buf.Reset()
-		fmt.Fprintf(q.w, `<script type="text/javascript">
-setvalue(%d);
-</script>
-`, int(pow10))
+		fmt.Fprintf(q.w, "\"query\": %q,\n\"n\": %d,\n", query, int(pow10))
 	} else {
 		fmt.Fprintln(q.w, "# n =", int(pow10))
 	}
 
+	item := first(q.r, "item")
+
 	// Tellingen van onderdelen
-	for number, meta := range metas {
+	for _, meta := range metas {
+
+		if meta.name != item {
+			continue
+		}
 
 		// telling van metadata in matchende zinnen
 
@@ -169,22 +131,6 @@ setvalue(%d);
 		}
 
 		if !download {
-			fmt.Fprintf(&buf, `
-<p>
-<b>%s</b>
-<table>
-  <tr>
-   <td>per item:
-     <table class="right" id="meta%da">
-     </table>
-   <td class="next">per zin:
-     <table class="right" id="meta%db">
-     </table>
-</table>
-`, html.EscapeString(meta.name), number, number)
-			updateText(q, buf.String())
-			buf.Reset()
-
 			fl := "right"
 			max := 99999
 			ac := 1
@@ -195,14 +141,18 @@ setvalue(%d);
 				ac = 0
 				bc = 0
 			}
-			fmt.Fprintf(q.w, `<script type="text/javascript">
-setmetavars(%d,"%s","%s",%d,%d,%d);
-setmetalines(%d`, number, meta.value, fl, max, ac, bc, number)
+			fmt.Fprintf(q.w, `"value": %q,
+"fl":%q,
+"max":%d,
+"ac":%d,
+"bc":%d,
+"lines":[
+`, meta.value, fl, max, ac, bc)
 		}
 
 		for run := 0; run < 2; run++ {
 			if !download {
-				fmt.Fprint(q.w, ",[")
+				fmt.Fprint(q.w, "[")
 			}
 			seen := make(map[int]*Statline)
 			lines := make([]Statline, 0)
@@ -325,36 +275,21 @@ setmetalines(%d`, number, meta.value, fl, max, ac, bc, number)
 				}
 			} // for _, line := range lines
 			if !download {
-				fmt.Fprintln(q.w, "]")
+				if run == 0 {
+					fmt.Fprintln(q.w, "],")
+				} else {
+					fmt.Fprintln(q.w, "]],")
+				}
 			}
 		} // for run := 0; run < 2; run++
-		if !download {
-			fmt.Fprintf(q.w, `);
-			   makemetatable(%d);
-			   //--></script>
-			   `, number)
-		}
 
-	} // for number_, meta := range metas
+	} // for _, meta := range metas
 
 	if !download {
-		fmt.Fprintf(&buf,
-			"<hr>tijd: %s\n<p>\n<a href=\"statsmeta?%s&amp;d=1\">download</a>\n",
+		fmt.Fprintf(q.w, "\"tijd\": %q,\n\"download\": %q\n",
 			tijd(time.Now().Sub(now)),
-			strings.Replace(q.r.URL.RawQuery, "&", "&amp;", -1))
-		updateText(q, buf.String())
-		buf.Reset()
+			strings.Replace(q.r.URL.RawQuery, "&", "&amp;", -1)+"&amp;d=1")
 	}
-}
-
-func completedmeta(q *Context, download bool) {
-	if download {
-		return
-	}
-	fmt.Fprintf(q.w, `<script type="text/javascript">
-window.parent._fn.completedmeta();
-</script>
-`)
 }
 
 func metahelp(q *Context) {
@@ -362,7 +297,7 @@ func metahelp(q *Context) {
 <div class="submenu a9999" id="helpmeta">
 <div class="corpushelp">
 
-De tabellen bestaan uit twee delen. Het linkerdeel,
+De tabel bestaat uit twee delen. Het linkerdeel,
 <em>per item</em>, geeft het aantal matches per metadata-waarde. Dit
 is het totaal aantal matches in het corpus, en dat
 kan soms hoger zijn dan het aantal matchende zinnen
