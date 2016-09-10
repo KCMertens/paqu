@@ -757,7 +757,11 @@ func html_header(q *Context) {
         lastcall = $.ajax("statsmeta?item=" + val + "&amp;" + $(document.statsrelform).serialize())
         .done(function(data) {
           var e = $("#statresults");
-          e.html('<div style="font-family:monospace">' + escapeHtml(data.query) + '</div>\n' + 
+          if (data.err != "") {
+            $("#statresults").html('<div class="error">Fout: ' + escapeHtml(data.err) + '</div>');
+            return;
+          }
+          e.html('<!-- <div style="font-family:monospace">' + escapeHtml(data.query) + '</div> -->\n' +
             '<p>\n' +
             '<a href="javascript:void(0)" onclick="javascript:metahelp()">toelichting bij tabel</a>\n' +
             '<p>\n' +
@@ -797,8 +801,8 @@ func html_header(q *Context) {
       .done(function(data) {
         statsreldata = data;
         var e = $("#statresults");
-        e.html('<div style="font-family:monospace">' + data.query +
-          '</div><p><table class="breed"></table>');
+        e.html('<!-- <div style="font-family:monospace">' + data.query +
+          '</div> --> <p><table class="breed"></table>');
         if (data.toomany) {
             e.append('<div class="warning">Te veel treffers. Bij het sorteren kunnen treffers met lagere aantallen ontbreken.</div>');
         }
