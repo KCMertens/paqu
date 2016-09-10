@@ -388,31 +388,10 @@ func home(q *Context) {
 	}
 
 	// Links naar statistieken
-	fmt.Fprintf(q.w, `<hr><p>
-        <div id="stats">
-        <div id="inner">
-        <form action="stats" target="sframe">
-        <input type="hidden" name="word" value="%s">
-        <input type="hidden" name="postag" value="%s">
-        <input type="hidden" name="rel" value="%s">
-        <input type="hidden" name="hpostag" value="%s">
-        <input type="hidden" name="hword" value="%s">
-        <input type="hidden" name="meta" value="%s">
-        <input type="hidden" name="db" value="%s">
-        <input type="submit" value="tellingen &mdash; algemeen">
-        </form>
-        </div>
-        <img src="busy.gif" id="busy" class="hide" alt="aan het werk...">
-        </div>
-        <iframe src="leeg.html" name="sframe" class="hide"></iframe>
-`,
-		html.EscapeString(first(q.r, "word")),
-		html.EscapeString(first(q.r, "postag")),
-		html.EscapeString(first(q.r, "rel")),
-		html.EscapeString(first(q.r, "hpostag")),
-		html.EscapeString(first(q.r, "hword")),
-		html.EscapeString(first(q.r, "meta")),
-		html.EscapeString(prefix))
+
+	if q.hasmeta[prefix] {
+		metahelp(q)
+	}
 
 	fmt.Fprintf(q.w, `<p>
         <div id="statsrel">
@@ -424,7 +403,7 @@ func home(q *Context) {
         <input type="hidden" name="hword" value="%s">
         <input type="hidden" name="meta" value="%s">
         <input type="hidden" name="db" value="%s">
-        Selecteer een of meer elementen:
+        Selecteer een tot drie elementen:
         <p>
         <table>
         <tr style="vertical-align:top"><td>
@@ -494,7 +473,7 @@ func home(q *Context) {
         }
       }
     }
-    if (n <  1) {
+    if (n < 1 || n > 3) {
       $('#statsrelsubmit').prop('disabled', true);
     } else {
       $('#statsrelsubmit').prop('disabled', false);
@@ -575,16 +554,16 @@ func html_header(q *Context) {
       return tbl;
   }
 
-  function fillMeta(idx) {
-    var ida = "#meta" + idx + "a";
-    var idb = "#meta" + idx + "b";
-    var fl = metavars[idx].fl;
-    var lbl = metavars[idx].lbl;
-    var max = metavars[idx].max;
-    var da = metavars[idx].a;
-    var db = metavars[idx].b;
-    var ac = metavars[idx].ac;
-    var bc = metavars[idx].bc;
+  function fillMeta() {
+    var ida = "#metaa";
+    var idb = "#metab";
+    var fl = metavars.fl;
+    var lbl = metavars.lbl;
+    var max = metavars.max;
+    var da = metavars.a;
+    var db = metavars.b;
+    var ac = metavars.ac;
+    var bc = metavars.bc;
     var ac0 = "";
     var ac1 = "";
     var bc0 = "";
@@ -621,29 +600,29 @@ func html_header(q *Context) {
        b.append('<tr><td>' + ival(db[i][0]) + '<td>' + ival(db[i][1]) + '<td class="' + fl + cl + '">' + v + '\n');
     }
     $(ida + ' td.a').on('click', function() {
-         metavars[idx].a = sortMeta(da, 0);
-         metavars[idx].ac = 0;
-         fillMeta(idx);
+         metavars.a = sortMeta(da, 0);
+         metavars.ac = 0;
+         fillMeta();
       });
     $(ida + ' td.b').on('click', function() {
-         metavars[idx].a = sortMeta(da, 1);
-         metavars[idx].ac = 1;
-         fillMeta(idx);
+         metavars.a = sortMeta(da, 1);
+         metavars.ac = 1;
+         fillMeta();
       });
     $(idb + ' td.a').on('click', function() {
-         metavars[idx].b = sortMeta(db, 0);
-         metavars[idx].bc = 0;
-         fillMeta(idx);
+         metavars.b = sortMeta(db, 0);
+         metavars.bc = 0;
+         fillMeta();
       });
     $(idb + ' td.b').on('click', function() {
-         metavars[idx].b = sortMeta(db, 1);
-         metavars[idx].bc = 1;
-         fillMeta(idx);
+         metavars.b = sortMeta(db, 1);
+         metavars.bc = 1;
+         fillMeta();
       });
     $(idb + ' td.c').on('click', function() {
-         metavars[idx].b = sortMeta(db, 2);
-         metavars[idx].bc = 2;
-         fillMeta(idx);
+         metavars.b = sortMeta(db, 2);
+         metavars.bc = 2;
+         fillMeta();
       });
   }
 
@@ -656,27 +635,11 @@ func html_header(q *Context) {
     f.meta.value = "";
   }
 
-  var result;
-  var resultmeta;
-  var busy;
   var metadn = 0;
-  var metavars = [];
-
-  window._fn = {
-    update: function(data) {
-      result.append(data);
-    },
-    started: function() {
-      result.html('');
-      busy.removeClass('hide');
-    },
-    completed: function() {
-      busy.addClass('hide');
-    }
-  }
-
+  var metavars = {};
   var metavisible = false;
   var queryvisible = false;
+
   function metahelp() {
     var e = $("#helpmeta");
     e.show();
@@ -763,28 +726,28 @@ func html_header(q *Context) {
           }
           e.html('<!-- <div style="font-family:monospace">' + escapeHtml(data.query) + '</div> -->\n' +
             '<p>\n' +
-            '<a href="javascript:void(0)" onclick="javascript:metahelp()">toelichting bij tabel</a>\n' +
+            '<b>' + escapeHtml(val) + '</b>' +
+            ' &mdash; <a href="javascript:void(0)" onclick="javascript:metahelp()">toelichting</a>\n' +
             '<p>\n' +
             '<table>\n' +
             '  <tr>\n' +
             '   <td>per item:\n' +
-            '     <table class="right" id="meta0a">\n' +
+            '     <table class="right" id="metaa">\n' +
             '     </table>\n' +
             '   <td class="next">per zin:\n' +
-            '     <table class="right" id="meta0b">\n' +
+            '     <table class="right" id="metab">\n' +
             '     </table>\n' +
             '</table>\n' +
             '<hr>tijd: ' + data.tijd + '<p><a href="statsmeta?' + data.download + '">download</a>\n');
           metadn = data.n;
-      	  metavars[0] = {};
-      	  metavars[0].lbl = data.value;
-      	  metavars[0].fl = data.fl;
-      	  metavars[0].max = data.max;
-      	  metavars[0].ac = data.ac;
-      	  metavars[0].bc = data.bc;
-          metavars[0].a = data.lines[0];
-          metavars[0].b = data.lines[1];
-          fillMeta(0);
+      	  metavars.lbl = data.value;
+      	  metavars.fl = data.fl;
+      	  metavars.max = data.max;
+      	  metavars.ac = data.ac;
+      	  metavars.bc = data.bc;
+          metavars.a = data.lines[0];
+          metavars.b = data.lines[1];
+          fillMeta();
         }).fail(function(e) {
           $("#statresults").html('<div class="error">Fout: ' + escapeHtml(e.responseText) + '</div>');
         })
@@ -792,11 +755,18 @@ func html_header(q *Context) {
           lastcall = null;
         });
       } else {
-          $("#statresults").html('Telling van één item dat geen metadata is werkt nog niet.');
-          console.log("geen meta");
+        var val = $('#statsrelform input:checked')[0].name;
+        lastcall = $.ajax("stats?item=" + val + "&amp;" + $(document.statsrelform).serialize())
+        .done(function(data) {
+          $("#statresults").html(data);
+        }).fail(function(e) {
+          $("#statresults").html('<div class="error">Fout: ' + escapeHtml(e.responseText) + '</div>');
+        })
+        .always(function() {
+          lastcall = null;
+        });
       }
     } else {
-      console.log("statsrel?" + $(document.statsrelform).serialize());
       lastcall = $.ajax("statsrel?" + $(document.statsrelform).serialize())
       .done(function(data) {
         statsreldata = data;
@@ -922,12 +892,6 @@ func html_header(q *Context) {
         t.append(s);
     }
   }
-
-  $(document).ready(function() {
-    result = $('#inner');
-    busy = $('#busy');
-    resultmeta = $('#statresults');
-  });
 
   //--></script>
 `)
