@@ -137,6 +137,7 @@ func makeQueryDo(q *Context, prefix, table string, chClose <-chan bool, form boo
 // Query uitvoeren. Cancel query niet alleen bij timeout, maar ook als request wordt verbroken.
 func timeoutQuery(q *Context, chClose <-chan bool, query string) (*sql.Rows, error) {
 
+	chLog <- "QUERY: " + query
 	a := make([]byte, 16)
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < 16; i++ {
