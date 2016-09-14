@@ -403,7 +403,7 @@ func home(q *Context) {
         <input type="hidden" name="hword" value="%s">
         <input type="hidden" name="meta" value="%s">
         <input type="hidden" name="db" value="%s">
-        Selecteer een tot drie elementen:
+        Selecteer &eacute;&eacute;n tot vijf elementen:
         <p>
         <table>
         <tr style="vertical-align:top"><td>
@@ -473,7 +473,7 @@ func home(q *Context) {
         }
       }
     }
-    if (n < 1 || n > 3) {
+    if (n < 1 || n > 5) {
       $('#statsrelsubmit').prop('disabled', true);
     } else {
       $('#statsrelsubmit').prop('disabled', false);

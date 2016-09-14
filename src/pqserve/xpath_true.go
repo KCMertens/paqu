@@ -518,10 +518,11 @@ $('#loading span').html('%.1f%%');
 		<form action="xpathstats" target="xframe" name="xstatsform" onsubmit="javascript:return xstatftest()">
 		<input type="hidden" name="xpath" value="%s">
 		<input type="hidden" name="db" value="%s">
-		Selecteer &eacute;&eacute;n tot drie attributen:<br>
+		Selecteer &eacute;&eacute;n tot vijf attributen:
+        <p>
 `, html.EscapeString(query), html.EscapeString(prefix))
 
-	for i := 1; i <= 3; i++ {
+	for i := 1; i <= 5; i++ {
 
 		fmt.Fprintf(q.w, "<select name=\"attr%d\">\n<option value=\"\">--</option>\n", i)
 		if q.hasmeta[prefix] {
@@ -543,7 +544,7 @@ $('#loading span').html('%.1f%%');
 
 	fmt.Fprint(q.w, `
 		<p>
-		<input type="submit" value="tellingen van combinaties">
+		<input type="submit" value="doe telling">
 		</form>
 		<p>
         <iframe src="leeg.html" name="xframe" class="hide"></iframe>
@@ -729,7 +730,7 @@ func html_xpath_header(q *Context) {
   var metacount1;
   var metacount2;
   var result;
-  var at1, at2, at3;
+  var at1, at2, at3, at4, at5;
   var xquery;
   var metadn = 0;
   var metavars = [];
@@ -747,16 +748,6 @@ func html_xpath_header(q *Context) {
     "'": '&#39;',
     "/": '&#x2F;'
   };
-
-  function ival(i) {
-      var s1 = "".concat(i);
-      var s2 = "";
-      for (var n = s1.length; n > 3; n = s1.length) {
-         s2 = "&#8239;".concat(s1.substr(n-3, n), s2);
-         s1 = s1.substr(0, n-3);
-      }
-      return s1.concat(s2);
-  }
 
   function escapeHtml(string) {
     return String(string).replace(/[&<>"'\/]/g, function (s) {
@@ -844,6 +835,8 @@ func html_xpath_header(q *Context) {
      $('#c1').on('click', function() { resultset(1); });
      $('#c2').on('click', function() { resultset(2); });
      $('#c3').on('click', function() { resultset(3); });
+     $('#c4').on('click', function() { resultset(4); });
+     $('#c5').on('click', function() { resultset(5); });
      var odd;
      for (i in data.lines) {
          if (i % 2 == 1) { odd = ' class="odd"'; } else { odd = ""; }
@@ -953,6 +946,8 @@ func html_xpath_header(q *Context) {
     if (at1.selectedIndex > 0) { n++; }
     if (at2.selectedIndex > 0) { n++; }
     if (at3.selectedIndex > 0) { n++; }
+    if (at4.selectedIndex > 0) { n++; }
+    if (at5.selectedIndex > 0) { n++; }
     if (n < 1) {
       alert("Geen attribuut geselecteerd");
       return false;
@@ -960,12 +955,16 @@ func html_xpath_header(q *Context) {
     setCookie("xpattr1", at1.value, 14);
     setCookie("xpattr2", at2.value, 14);
     setCookie("xpattr3", at3.value, 14);
+    setCookie("xpattr4", at4.value, 14);
+    setCookie("xpattr5", at5.value, 14);
     return true;
   }
   function setForm() {
     at1.selectedIndex = 0;
     at2.selectedIndex = 0;
     at3.selectedIndex = 0;
+    at4.selectedIndex = 0;
+    at5.selectedIndex = 0;
     try {
       var a = getCookie("xpattr1");
       if (a != "" ) {
@@ -982,6 +981,18 @@ func html_xpath_header(q *Context) {
       var a = getCookie("xpattr3");
       if (a != "" ) {
           at3.value = a;
+      }
+    } catch (e) { }
+    try {
+      var a = getCookie("xpattr4");
+      if (a != "" ) {
+          at4.value = a;
+      }
+    } catch (e) { }
+    try {
+      var a = getCookie("xpattr5");
+      if (a != "" ) {
+          at5.value = a;
       }
     } catch (e) { }
   }
@@ -1104,6 +1115,8 @@ func html_xpath_header(q *Context) {
       at1 = f["attr1"];
       at2 = f["attr2"];
       at3 = f["attr3"];
+      at4 = f["attr4"];
+      at5 = f["attr5"];
       setForm();
     } catch (e) {}
   });
