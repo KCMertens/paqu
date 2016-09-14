@@ -454,6 +454,22 @@ func home(q *Context) {
         </div>
         </div>
 <script type="text/javascript"><!--
+  function setCookie(cname, cvalue, exdays) {
+    var d = new Date();
+    d.setTime(d.getTime() + (exdays*24*60*60*1000));
+    var expires = "expires="+d.toUTCString();
+    document.cookie = cname + "=" + cvalue + "; " + expires;
+  }
+  function getCookie(cname) {
+    var name = cname + "=";
+    var ca = document.cookie.split(';');
+    for(var i=0; i<ca.length; i++) {
+        var c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1);
+        if (c.indexOf(name) != -1) return c.substring(name.length,c.length);
+    }
+    return "";
+  }
   function statsrelformcheck() {
     var f = document.forms["statsrelform"];
     var n = 0;
@@ -477,11 +493,25 @@ func home(q *Context) {
       $('#statsrelsubmit').prop('disabled', true);
     } else {
       $('#statsrelsubmit').prop('disabled', false);
+      var el = $('#statsrelform input:checked');
+      var items = []
+      for (i = 0; i < el.length; i++) {
+          items.push(el[i].name);
+      }
+      setCookie("basic", items.join('}|^!!'), 14);
     }
   }
   $('#statsrelform input').on('change', function (e) {
     statsrelformcheck();
   });
+  var ck = getCookie('basic').split('}|^!!');
+  var f = document.forms["statsrelform"];
+  for (i = 0; i < ck.length; i++) {
+    try {
+        f[ck[i]].checked = true;
+    }
+    catch(err) {}
+  }
   statsrelformcheck();
 //--></script>
 `)
