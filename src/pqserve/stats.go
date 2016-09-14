@@ -546,6 +546,9 @@ func statsrel(q *Context) {
 						qword = urlencode("+" + unHigh(s))
 					case "postag":
 						qpostag = urlencode(s)
+						if qpostag == "" {
+							qpostag = "(leeg)"
+						}
 					case "rel":
 						qrel = urlencode(s)
 					case "hword":
@@ -555,7 +558,7 @@ func statsrel(q *Context) {
 					case "hpostag":
 						qhpostag = urlencode(s)
 						if qhpostag == "" {
-							qhpostag = "--LEEG--"
+							qhpostag = "(leeg)"
 						}
 					}
 				}

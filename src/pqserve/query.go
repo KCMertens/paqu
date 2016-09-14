@@ -96,13 +96,16 @@ func makeQueryDo(q *Context, prefix, table string, chClose <-chan bool, form boo
 		}
 	}
 	if s := frst("postag"); s != "" {
+		if s == "(leeg)" {
+			s = ""
+		}
 		parts = append(parts, fmt.Sprintf(table+"`postag` = %q", s))
 	}
 	if s := frst("rel"); s != "" {
 		parts = append(parts, fmt.Sprintf(table+"`rel` = %q", s))
 	}
 	if s := frst("hpostag"); s != "" {
-		if s == "--LEEG--" {
+		if s == "(leeg)" {
 			s = ""
 		}
 		parts = append(parts, fmt.Sprintf(table+"`hpostag` = %q", s))
