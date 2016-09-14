@@ -730,13 +730,13 @@ func html_header(q *Context) {
     if (firsttime) {
         firsttime = false;
         $('#statstel').removeClass('hide');
-        $.ajax("statstel?t=1&amp;`+qs+`")
+        $.ajax("statstel?t=1&`+qs+`")
           .done(function(data) {
             $("#statstel1").html(data);
           }).fail(function(e) {
             $("#statstel1").html(escapeHtml(e.responseText));
           });
-        $.ajax("statstel?t=2&amp;`+qs+`")
+        $.ajax("statstel?t=2&`+qs+`")
           .done(function(data) {
             $("#statstel2").html(data);
           }).fail(function(e) {
@@ -747,7 +747,7 @@ func html_header(q *Context) {
     if ($('#statsrelform input:checked').length == 1) {
       if ($('#statsrelform input[name=cmeta]:checked').length == 1) {
         var val = $('#statsrelform input[name=cmeta]:checked')[0].value;
-        lastcall = $.ajax("statsmeta?item=" + val + "&amp;" + $(document.statsrelform).serialize())
+        lastcall = $.ajax("statsmeta?item=" + val + "&" + $(document.statsrelform).serialize())
         .done(function(data) {
           var e = $("#statresults");
           if (data.err != "") {
@@ -786,7 +786,7 @@ func html_header(q *Context) {
         });
       } else {
         var val = $('#statsrelform input:checked')[0].name;
-        lastcall = $.ajax("stats?item=" + val + "&amp;" + $(document.statsrelform).serialize())
+        lastcall = $.ajax("stats?item=" + val + "&" + $(document.statsrelform).serialize())
         .done(function(data) {
           $("#statresults").html(data);
         }).fail(function(e) {

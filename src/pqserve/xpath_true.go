@@ -487,35 +487,11 @@ $('#loading span').html('%.1f%%');
 		metas = getMeta(q, prefix)
 	}
 
-	if q.hasmeta[prefix] {
-		metahelp(q)
-		fmt.Fprintf(q.w, `<p>
-            <div id="statsmeta">
-            <div id="innermetatop"></div>
-            <div id="metacount" class="hide">
-            <table>
-            <tr><td>items:<td class="right" id="metacount1">
-            <tr><td>zinnen:<td class="right" id="metacount2">
-            </table>
-            </div>
-            <div id="innermeta">
-            <form action="xstatsmeta" target="sframemeta">
-            <input type="hidden" name="xpath" value="%s">
-            <input type="hidden" name="db" value="%s">
-            <input type="submit" value="tellingen &mdash; metadata">
-            </form>
-            </div>
-            <img src="busy.gif" id="busymeta" class="hide" alt="aan het werk..." style="margin-top:1em">
-            </div>
-            <iframe src="leeg.html" name="sframemeta" class="hide"></iframe>`,
-			html.EscapeString(query),
-			html.EscapeString(prefix))
-	}
-
 	// Links naar statistieken
-	fmt.Fprintf(q.w, `<p>
+	fmt.Fprintf(q.w, `
+        <p>
 		<div id="xstats">
-		<form action="xpathstats" target="xframe" name="xstatsform" onsubmit="javascript:return xstatftest()">
+		<form action="javascript:$.fn.xpathstats()" name="xstatsform">
 		<input type="hidden" name="xpath" value="%s">
 		<input type="hidden" name="db" value="%s">
 		Selecteer &eacute;&eacute;n tot vijf attributen:
@@ -548,9 +524,32 @@ $('#loading span').html('%.1f%%');
 		</form>
 		<p>
         <iframe src="leeg.html" name="xframe" class="hide"></iframe>
-        <div id="result"></div>
-		</div>
+        <div id="result" class="hide"></div>
 `)
+	if q.hasmeta[prefix] {
+		metahelp(q)
+		fmt.Fprintf(q.w, `<p>
+            <div id="statsmeta" class="hide">
+            <div id="innermetatop"></div>
+            <div id="metacount" class="hide">
+            <table>
+            <tr><td>items:<td class="right" id="metacount1">
+            <tr><td>zinnen:<td class="right" id="metacount2">
+            </table>
+            </div>
+            <div id="innermeta">
+            <form action="xstatsmeta" target="sframemeta">
+            <input type="hidden" name="xpath" value="%s">
+            <input type="hidden" name="db" value="%s">
+            <input type="submit" value="tellingen &mdash; metadata">
+            </form>
+            </div>
+            <img src="busy.gif" id="busymeta" class="hide" alt="aan het werk..." style="margin-top:1em">
+            </div>`,
+			html.EscapeString(query),
+			html.EscapeString(prefix))
+	}
+	fmt.Fprintln(q.w, "</div>")
 
 }
 
@@ -583,6 +582,57 @@ func html_xpath_header(q *Context) {
 	fmt.Fprint(q.w, `
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript"><!--
+
+  hexEncode = function(s){
+    var hex, i;
+    var result = "";
+    for (i = 0; i < s.length; i++) {
+        hex = s.charCodeAt(i).toString(16);
+        result += ("000" + hex).slice(-4);
+    }
+    return result.toLowerCase();
+  }
+
+  var metarun = true;
+  $.fn.xpathstats = function() {
+
+    var n = 0;
+    var val = "";
+    if (at1.selectedIndex > 0) { n++; val = at1.value; }
+    if (at2.selectedIndex > 0) { n++; val = at2.value; }
+    if (at3.selectedIndex > 0) { n++; val = at3.value;  }
+    if (at4.selectedIndex > 0) { n++; val = at4.value;  }
+    if (at5.selectedIndex > 0) { n++; val = at5.value;  }
+    if (n < 1) {
+      alert("Geen attribuut geselecteerd");
+      return;
+    }
+    setCookie("xpattr1", at1.value, 14);
+    setCookie("xpattr2", at2.value, 14);
+    setCookie("xpattr3", at3.value, 14);
+    setCookie("xpattr4", at4.value, 14);
+    setCookie("xpattr5", at5.value, 14);
+
+    if (n == 1 && val.substring(0, 1) == ":") {
+        val = val.substring(1)
+        $('#result').addClass('hide');
+        if (!metarun) {
+            $('.metasub').addClass('hide');
+        }
+        $('#statsmeta').removeClass('hide');
+        if (metarun) {
+            document.xframe.location.assign("xstatsmeta?item=" + val + "&" + $(document.xstatsform).serialize());
+        } else {
+            $('#meta' + hexEncode(val)).removeClass('hide');
+        }
+    } else {
+        $('#statsmeta').addClass('hide');
+        $('#result').html('');
+        $('#result').removeClass('hide');
+        document.xframe.location.assign("xpathstats?" + $(document.xstatsform).serialize());
+    }
+
+  }
 
   function ival(i) {
       var s1 = "".concat(i);
@@ -900,6 +950,7 @@ func html_xpath_header(q *Context) {
     },
     completedmeta: function() {
       busymeta.addClass('hide');
+      metarun = false;
     },
     init: function(o) {
       curcol = 0;

@@ -145,7 +145,7 @@ function init(s) {
 }
 //--></script>
 </head>
-<body">
+<body>
 `)
 	}
 
