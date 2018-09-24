@@ -14,9 +14,9 @@ then
     exit
 fi
 
-killall pqserve
+pkill pqserve
 sleep 2
-killall -KILL pqserve
+pkill -KILL pqserve
 sleep 2
 echo Restarting pqserve
 echo
