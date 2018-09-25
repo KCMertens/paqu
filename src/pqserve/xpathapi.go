@@ -5,24 +5,28 @@ package main
 import (
     "github.com/pebbe/dbxml"
 
-    "bytes"
-    "crypto/md5"
-    "database/sql"
-    "encoding/xml"
-    "errors"
     "fmt"
-    "html"
-    "net/http"
-    "os"
-    "os/exec"
-    "path/filepath"
     "regexp"
     "strconv"
     "strings"
-    "time"
+    // "time"
     "encoding/json"
-    "regexp"
+    // "net/http"
+    "io/ioutil"
 )
+
+func min(a int, b int) int {
+    if a < b { 
+        return a 
+    } 
+    return b
+}
+
+func unpack(s []string, vars... *string) {
+    for i, str := range s {
+        *vars[i] = str
+    }
+}
 
 type XPathVariable struct {
     // skip variable declaration in xquery if name == $node, that variable is already defined 
@@ -30,73 +34,81 @@ type XPathVariable struct {
     path    string
 }
 
+type RequestPayload struct {
+    // The xpath expression to query the db
+    XPath string                `json:field_xpath`
+    // TODO - Retrieve context around xpath results (or something like it)
+    Context bool                `json:field_retrieveContext`
+    // corpus to search
+    Corpus  string              `json:field_corpus`
+    // variables to also output
+    Variables []XPathVariable   `json:field_variables`
+    // the page that's being requested, maps to a set of results at a specific offset
+    Iteration int               `json:field_iteration`
+    // Is this an analysis request, means larger result subsets are returned?
+    Analysis bool               `json:field_isAnalysis`
+
+    // unused
+    // set of unprocessed components - pingponged between client and server?
+    RemainingDatabases []string `json:field_remainingDatabases`
+    // subcomponents of the corpus to search
+    Components []string         `json:field_components`
+}
+
 
 /** TODO document request payload */
 func xpathapi(q *Context) {
     // from gretel4 config.php 
-    const resultsLimit := 500
-    const analysisLimit := 50000
+    const resultsLimit = 500
+    const analysisLimit = 50000
     // undefined in gretel4?
     // const analysisFlushLimit := 
-    var flushLimit := 50
-    var searchLimit := resultsLimit
+    var flushLimit = 50
+    var searchLimit = resultsLimit
 
     // TODO we're currently accessing through query parameters
-    // we need to use the POST body as json.
+    requestBody, err := ioutil.ReadAll(q.r.Body)
+    if logerr(err) {
+        return
+    }
     
-    // string - the xpath expression
-    const xpath := first(q.r, "xpath") 
-    // [bool] (false) - get context around hits
-    const context := first(q.r, "retrieveContext") 
-    // string- the index we're searching in
-    const corpus := first(q.r, "corpus")
-    // []string - not sure if components are a thing in paqu, mostly 2-letter ids in basex
-    // different for grinded corpora, but that's not a thing in paqu
-    // const components := first(q.r, "components")
-    // []XPathVariable - xpath expressions whose results are stored in a named variable in the output
-    // nil if not passed.
-    const variables := first(q.r, "variables")
-    // int - request page, actual results depending on flushlimit and resultlimit
-    const iteration := first(q.r, "iteration")
-    // []string set of unprocessed components - pingponged between client and server?
-    // const remainingDatabases := first(q.r, "remainingDatabases")
-    
-    // [bool] (false) - not always passed
-    const isAnalysis := first(q.r, "isAnalysis")
-    if isAnalysis {
+    var payload RequestPayload;
+    err = json.Unmarshal(requestBody, &payload)
+    if logerr(err) {
+        return
+    }
+
+    if payload.Analysis {
         flushLimit = analysisLimit
         searchLimit = analysisLimit
     }
 
-    const startOffset = min(iteration * flushLimit, searchLimit)
-    const endOffset = min(iteration+1 * flushLimit, searchLimit)
+    startOffset := min(payload.Iteration * flushLimit, searchLimit)
+    endOffset := min((payload.Iteration+1) * flushLimit, searchLimit)
     if startOffset >= searchLimit {
         return; // TODO proper empty response 
     }
 
-    const results = getResults(q, startOffset, endOffset, xpath, context, corpus, variables);
-
-
+    resultJson := getResults(q, startOffset, endOffset, payload.XPath, payload.Context, payload.Corpus, payload.Variables);
+    fmt.Println(q.w, resultJson)
     
     // TODO
     // header('Content-Type: application/json');
     // echo json_encode($results);
 }
 
-func getResults(q *Context, startOffset int, endOffset int, xpath string, context bool, corpus string, components []string, start int, searchLimit int, variables []XPathVariable)
-{
+func getResults(q *Context, startOffset int, endOffset int, xpath string, context bool, corpus string, variables []XPathVariable) string {
     dactfiles := make([]string, 0)
-	global := true
-    rows, errval = q.db.Query(fmt.Sprintf("SELECT `arch` FROM `%s_c_%s_arch` ORDER BY `id`", Cfg.Prefix, corpus))
+    rows, errval := q.db.Query(fmt.Sprintf("SELECT `arch` FROM `%s_c_%s_arch` ORDER BY `id`", Cfg.Prefix, corpus))
     if logerr(errval) {
-        return
+        return ""
     }
     for rows.Next() {
         var s string
         errval = rows.Scan(&s)
         if logerr(errval) {
             rows.Close()
-            return
+            return ""
         }
         if strings.HasSuffix(s, ".dact") {
             dactfiles = append(dactfiles, s)
@@ -104,117 +116,116 @@ func getResults(q *Context, startOffset int, endOffset int, xpath string, contex
     }
     errval = rows.Err()
     if logerr(errval) {
-        return
+        return ""
     }
 
     if len(dactfiles) == 0 {
         fmt.Fprintln(q.w, "Er zijn geen dact-bestanden voor dit corpus")
-        return
+        return ""
     }
     
 
-    for i, dactfile := range dactfiles {
-        db, errval = dbxml.OpenRead(dactfile)
+    for _, dactfile := range dactfiles {
+        db, errval := dbxml.OpenRead(dactfile)
         if logerr(errval) {
-            return
+            return ""
         }
 
-        const xquery = createXquery(startOffset, endOffset, xpath, context, variables)
+        xquery := createXquery(startOffset, endOffset, xpath, context, variables)
     
         var qu *dbxml.Query
         qu, errval = db.Prepare(xquery, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
         if logerr(errval) {
-            return
+            return ""
         }
-        interrupted := make(chan bool, 1)
-        go func() {
-            select {
-            case <-chClose:
-                interrupted <- true
-                logerr(errConnectionClosed)
-                qu.Cancel()
-            }
-        }()
-    
-        docs, errval = qu.Run()
-        if logerr(errval) {
-            return
-        }
-
-
         
+        docs, errval := qu.Run()
+        if logerr(errval) {
+            return ""
+        }
+
         // read results
         var matches []string
         for docs.Next() {
-            const name = docs.Name()
-            const content = docs.Content()
-            const match = docs.Match()
+            // const name = docs.Name()
+            // const content = docs.Content()
+            // const match = docs.Match()
 
-            matches = append(matches, strings.split(match, "</result>"))
+            matches = append(matches, strings.Split(docs.Match(), "</result>")...)
 
             // now process match? this will be stupid
             // let's first attempt to just echo the matches
         }
 
-        var sentenceMap := make(map[string]string)
-        var tbMap := make(map[string]string) // unused? only for grinded/sonar corpus?
-        var nodeIdMap := make(map[string]string)
-        var beginsMap := make(map[string]string)
-        var xmlSentencesMap := make(map[string]string)
-        var metaMap := make(map[string]string)
-        var variablesMap := make(map[string]string)
-        var originMap := make(map[string]string) // database where the sentence originated - we store the dactfile here for now
+        sentenceMap := make(map[string]string)
+        tbMap := make(map[string]string) // unused? only for grinded/sonar corpus?
+        nodeIdMap := make(map[string]string)
+        beginsMap := make(map[string]string)
+        xmlSentencesMap := make(map[string]string)
+        metaMap := make(map[string]string)
+        variablesMap := make(map[string]string)
+        originMap := make(map[string]string) // database where the sentence originated - we store the dactfile here for now
 
         // Process results
 
-        const varsRegex := regex.Compile("<vars>.*<\/vars>/s")
+        varsRegex, errval := regexp.Compile("<vars>.*</vars>/s")
+        if logerr(errval) {
+            return ""
+        }
+
         for i, match := range matches {
             match = strings.TrimSpace(match)
             match = strings.Replace(match, "<result>", "", -1)
-            if match.Len() == 0 {
+            if len(match) == 0 {
                 continue
             }
 
             var sentenceId, sentence, nodeIds, begins, xmlSentences, meta string
-            unpack(strings.split(match, "||"), &sentenceId, &sentence, &nodeIds, &begins, &xmlSentences, &meta)
+            unpack(strings.Split(match, "||"), &sentenceId, &sentence, &nodeIds, &begins, &xmlSentences, &meta)
 
-            if strings.Len(strings.Trim(sentenceId)) == 0 || 
-               strings.Len(sentence) == 0 || 
-               strings.Len(ids) == 0 ||
-               strings.Len(begins) == 0 
-            {
+            if len(strings.TrimSpace(sentenceId)) == 0 || 
+               len(sentence) == 0 || 
+               len(nodeIds) == 0 ||
+               len(begins) == 0 {
                 continue
             }
 
             // Add unique identifier to avoid overlapping sentences w/ same ID
             // Not entirely correct, endPos previously held endPosIteration (was page number? [endoffset / flushlimit])
-            sentenceId = strings.Trim(sentenceId)+"-endPos="+endOffset+"+match="+i 
+            sentenceId = strings.TrimSpace(sentenceId)+"-endPos="+strconv.Itoa(endOffset)+"+match="+strconv.Itoa(i) 
             
             sentenceMap[sentenceId] = sentence
             nodeIdMap[sentenceId] = nodeIds
             beginsMap[sentenceId] = begins
             xmlSentencesMap[sentenceId] = xmlSentences 
             metaMap[sentenceId] = meta
-            variablesMap[sentenceId] = varsRegex.Find(match)
+            variablesMap[sentenceId] = varsRegex.FindString(match)
             originMap[sentenceId] = dactfile
         }
 
-        var result := []interface{}{sentenceMap, tbMap, nodeIdMap, beginsMap, xmlSentencesMap, metaMap, variablesMap, endoffset, "[]" /* remaining basex databases to process, not applicable */, originMap, xquery}
+        result := []interface{}{sentenceMap, tbMap, nodeIdMap, beginsMap, xmlSentencesMap, metaMap, variablesMap, endOffset, "[]" /* remaining basex databases to process, not applicable */, originMap, xquery}
         
-        json, errval = json.Marshal(result)
+        rbyte, errval := json.Marshal(result)
         if logerr(errval) {
-            return
+            return ""
         }
+        rbyte = json.RawMessage(rbyte)
+        if logerr(errval) {
+            return ""
+        }
+        
 
-        fmt.println(q.w, json)
-        return
-
+        return string(rbyte[:])
+        
+        // fmt.println(q.w, json)
+        // return resultJson
 
         // TODO maybe store remaining dact files in the remaining databases? 
         // also continue across dact file borders if we haven't yet processed enough results for our window
         // TODO acquire some test data using multiple dact files.
         // also what to do with dactx data?
     }
+    return "" // TODO when no files that's an error
 
 
 
@@ -337,27 +348,27 @@ Example query from gretel4
 )
 [position() = 51 to 100]
 */
-func createXquery(startIndex int, endIndex int, xpath string, context bool, variables: []XPathVariable) {
+func createXquery(startIndex int, endIndex int, xpath string, context bool, variables []XPathVariable) string {
     var variable_declarations string;
     var variable_results string;
-    for i, variable := range variables {
-        variable_results += "<var name=\""+variable.name"\">{'"+variable.name+"'/@*}</var>:"
+    for _, variable := range variables {
+        variable_results += "<var name=\""+variable.name+"\">{'"+variable.name+"'/@*}</var>"
         if variable.name != "$node" { // variable $node already exists in query
-            variable_declarations += "let "+variable.name+" := ('"+value.path+"')[1]"
+            variable_declarations += "let "+variable.name+" := ('"+variable.path+"')[1]"
         }
     }
     
     // main node matching and iteration
-    var xfor := "for $node in "+xpath
+    xfor := "for $node in "+xpath
 
     // Extract the following values for all matched nodes (not sure if this will even work, assume the xml is similar?)
-    var tree :=     "let $tree := ($node/ancestor::alpino_ds)"
-    var sentid :=   "let $sentid := ($tree/@id)"
-    var sentence := "let $sentence := ($tree/sentence)"
-    var ids :=      "let $ids := ($node//@id)"
-    var begins :=   "let $begins := ($node//@begin)"
-    var beginlist = "let $beginlist := (distinct-values($begins))"
-    var meta :=     "let $meta := ($tree/metadata/meta)"
+    tree :=     "let $tree := ($node/ancestor::alpino_ds)"
+    sentid :=   "let $sentid := ($tree/@id)"
+    sentence := "let $sentence := ($tree/sentence)"
+    ids :=      "let $ids := ($node//@id)"
+    begins :=   "let $begins := ($node//@begin)"
+    beginlist :="let $beginlist := (distinct-values($begins))"
+    meta :=     "let $meta := ($tree/metadata/meta)"
     
     // TODO
 //     if ($context) {
@@ -389,11 +400,11 @@ func createXquery(startIndex int, endIndex int, xpath string, context bool, vari
 //             $xquery = $for.$xpath.PHP_EOL.$tree.$sentid.$sentence.$context_sentences.$regulartb.$ids.$begins.$beginlist.$meta.$variable_declarations.$return;
 //         }
 //     } else {
-        const xreturn := " return <match>{data($sentid)}||{data($sentence)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||"+variable_results+"</match>"
+        xreturn := " return <match>{data($sentid)}||{data($sentence)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||"+variable_results+"</match>"
         
-        xquery = xfor+xpath+'\n'+tree+sentid+sentence+ids+begins+beginlist+meta+variable_declarations+xreturn;
+        xquery := xfor+xpath+string('\n')+tree+sentid+sentence+ids+begins+beginlist+meta+variable_declarations+xreturn;
     // }
 
-    xquery = "("+xquery+")[position() ="+startIndex+" to "+endIndex+"]"
-    return $xquery;
+    xquery = "("+xquery+")[position() ="+strconv.Itoa(startIndex)+" to "+strconv.Itoa(endIndex)+"]"
+    return xquery
 }
