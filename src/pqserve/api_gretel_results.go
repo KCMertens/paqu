@@ -6,12 +6,9 @@ import (
     "github.com/pebbe/dbxml"
 
     "fmt"
-    // "regexp"
     "strconv"
     "strings"
-    // "time"
     "encoding/json"
-    // "net/http"
     "io/ioutil"
 )
 
@@ -56,9 +53,7 @@ type RequestPayload struct {
     Components []string         `json:field_components`
 }
 
-
-/** TODO document request payload */
-func xpathapi(q *Context) {
+func api_gretel_results(q *Context) {
     // from gretel4 config.php 
     const resultsLimit = 500
     const analysisLimit = 50000
