@@ -1978,7 +1978,7 @@ $('#loading span').html('%.1f%%');
 		}
 
 		var qu *dbxml.Query
-		qu, errval = db.Prepare(queryparts[0])
+		qu, errval = db.Prepare(queryparts[0], true)
 		if logerr(errval) {
 			return
 		}

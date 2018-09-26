@@ -230,17 +230,15 @@ func handleFunc(url string, handler func(*Context)) {
 			case "POST":
 				if url != "/corsave" {
 					reader, err := r.MultipartReader()
-					if err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						logerr(err)
-						return
+					if err == nil {
+						q.form, err = reader.ReadForm(10 * 1024 * 1024)
+						if err != nil {
+							http.Error(w, err.Error(), http.StatusInternalServerError)
+							logerr(err)
+							return
+						}
 					}
-					q.form, err = reader.ReadForm(10 * 1024 * 1024)
-					if err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						logerr(err)
-						return
-					}
+					// let the implementation site figure it out
 				}
 			default:
 				http.Error(w, "Methode "+r.Method+" is niet toegestaan", http.StatusMethodNotAllowed)

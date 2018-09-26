@@ -265,7 +265,7 @@ func xsavez2(q *Context) {
 				return
 			}
 
-			qu, err := dact.Prepare(queryparts[0])
+			qu, err := dact.Prepare(queryparts[0], true, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
 			if hErr(q, err) {
 				return
 			}

@@ -298,7 +298,7 @@ c("0", "0");
 		}
 
 		var qu *dbxml.Query
-		qu, errval = db.Prepare(queryparts[0])
+		qu, errval = db.Prepare(queryparts[0], true, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
 		if logerr(errval) {
 			return
 		}

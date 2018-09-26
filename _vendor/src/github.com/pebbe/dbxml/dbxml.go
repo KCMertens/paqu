@@ -303,7 +303,7 @@ func (db *Db) All() (*Docs, error) {
 //          }
 //      }
 func (db *Db) Query(query string, namespaces ...Namespace) (*Docs, error) {
-	q, err := db.Prepare(query, namespaces...)
+	q, err := db.Prepare(query, true, namespaces...)
 	if err != nil {
 		return &Docs{}, err
 	}
@@ -313,7 +313,7 @@ func (db *Db) Query(query string, namespaces ...Namespace) (*Docs, error) {
 // Prepare an XPATH query.
 //
 // The query can be run multiple times, and a running query can be cancelled by query.Cancel()
-func (db *Db) Prepare(query string, namespaces ...Namespace) (*Query, error) {
+func (db *Db) Prepare(query string, implicitCollection bool, namespaces ...Namespace) (*Query, error) {
 	q := &Query{}
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -330,7 +330,12 @@ func (db *Db) Prepare(query string, namespaces ...Namespace) (*Query, error) {
 		ns[2*i+1] = C.CString(n.Uri)
 	}
 
-	q.query = C.c_dbxml_prepare_query(db.db, cs, &ns[0])
+	var ci C.int
+	if implicitCollection {
+		ci = 1
+	}
+
+	q.query = C.c_dbxml_prepare_query(db.db, cs, ci, &ns[0])
 
 	for i := range namespaces {
 		C.free(unsafe.Pointer(ns[2*i]))
