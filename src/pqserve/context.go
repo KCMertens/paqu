@@ -51,6 +51,7 @@ func handleStatic(url string, handler func(*Context)) {
 				w: w,
 				r: r,
 			}
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 			handler(q)
 		})
 }
@@ -220,6 +221,11 @@ func handleFunc(url string, handler func(*Context)) {
 
 			// Verwerk input
 			switch r.Method {
+			case "OPTIONS": 
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Accept-Language, Content-Language, Content-Type")
+				return
 			case "GET":
 				err = r.ParseForm()
 				if err != nil {
@@ -244,6 +250,8 @@ func handleFunc(url string, handler func(*Context)) {
 				http.Error(w, "Methode "+r.Method+" is niet toegestaan", http.StatusMethodNotAllowed)
 				return
 			}
+
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 
 			// Update login-cookies
 			setcookie(q)

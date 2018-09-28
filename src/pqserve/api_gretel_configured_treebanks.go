@@ -13,11 +13,11 @@ import (
 )
 
 type TreebankComponent struct {
-    Database_id string  `json:"database_id"`
-    Description string  `json:"description"`
-    Sentences int       `json:"sentences"`
-    Title string        `json:"title"`
-    Words int           `json:"words"`
+    Database_id string      `json:"database_id"`
+    Description string      `json:"description"`
+    Sentences interface{}   `json:"sentences"` // number if known, else "?"
+    Title string            `json:"title"`
+    Words interface{}       `json:"words"` // number if known, else "?"
 }
 
 type TreebankMetadata struct {
@@ -40,18 +40,19 @@ type Treebank struct {
 type ConfiguredTreebanksResponse map[string]Treebank
 
 func api_gretel_configured_treebanks(q *Context) {
-    // TODO we're currently accessing through query parameters
 
     treebanks := make(map[string]Treebank)
     for id, _ := range q.prefixes {
         treebanks[id] = Treebank{
+            // TODO list .dact files as components. retrieve number of sentences and words from the file if possible?
+            // might be a simple query we can do to get this.
             Components: map[string]TreebankComponent{
                 "default": TreebankComponent{
-                    Database_id: "",
+                    Database_id: "default",
                     Description: "Search this whole corpus",
-                    Sentences: 1,
+                    Sentences: "?",
                     Title: "Everything",
-                    Words: 1,
+                    Words: "?",
                 },
             },
             Description: "Todo",

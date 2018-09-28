@@ -38,7 +38,11 @@ import (
 // }
 
 // corpus/component(?):metadatakey: count 
-type MetadataCountsResponse map[string]map[string]int
+
+// In gretel4, the string key refers to a basex database (such as "LASSY_ID_WSU")
+// String key for us should probably refer to a dact file
+// It's important this map contains all keys in the Components property of the configured_treebanks response (api_gretel_configured_treebanks)
+type TreebankCountsResponse map[string]int
 
 // $router->map('POST', '/metadata_counts', function () {
 //     $input = file_get_contents('php://input');
@@ -128,12 +132,19 @@ type MetadataCountsResponse map[string]map[string]int
 //     return $totals;
 // }
 
-
-func api_gretel_metadata_counts(q *Context) {
-
+// TODO return number of hits per subcomponent in this corpus
+// if unknown, we may be able to send '?' where the count is normally located.
+func api_gretel_treebank_counts(q *Context) {
+    
     q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
     q.w.Header().Set("Cache-Control", "no-cache")
     q.w.Header().Add("Pragma", "no-cache")
-
-    fmt.Fprint(q.w, "[]") // default seems to be an empty array, TODO this is weird... php cde indicates a map should be returned?
+    
+    // TODO this is very incorrect, needs to actually be the number of hits
+    // for now we just mock the configured_treebanks response, so we can also mock this (sort of) as we know we only specify the "default" component
+    // why not have the results contain a property detailing their origination in the actual results object...
+    // then the client can perform this.
+    fmt.Fprint(q.w, "{\"default\": 1}")
 }
+
+// TODO see gretel4/
