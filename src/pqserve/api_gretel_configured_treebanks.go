@@ -7,7 +7,7 @@ import (
 
     "fmt"
 //     "strconv"
-//     "strings"
+    "strings"
     "encoding/json"
 //     "io/ioutil"
 )
@@ -42,22 +42,50 @@ type ConfiguredTreebanksResponse map[string]Treebank
 func api_gretel_configured_treebanks(q *Context) {
 
     treebanks := make(map[string]Treebank)
+    TREEBANKS: 
     for id, _ := range q.prefixes {
+       
+        dactfiles := make([]string, 0)
+        rows, errval := q.db.Query(fmt.Sprintf("SELECT `arch` FROM `%s_c_%s_arch` ORDER BY `id`", Cfg.Prefix, id))
+        if logerr(errval) {
+            continue TREEBANKS
+        }
+        for rows.Next() {
+            var s string
+            errval = rows.Scan(&s)
+            if logerr(errval) {
+                rows.Close()
+                continue TREEBANKS
+            }
+            if strings.HasSuffix(s, ".dact") {
+                dactfiles = append(dactfiles, s)
+            }
+        }
+        errval = rows.Err()
+        if logerr(errval) {
+            continue TREEBANKS
+        }
+        
         treebanks[id] = Treebank{
             // TODO list .dact files as components. retrieve number of sentences and words from the file if possible?
             // might be a simple query we can do to get this.
-            Components: map[string]TreebankComponent{
-                "default": TreebankComponent{
-                    Database_id: "default",
-                    Description: "Search this whole corpus",
-                    Sentences: "?",
-                    Title: "Everything",
-                    Words: "?",
-                },
-            },
+            Components: make(map[string]TreebankComponent),
             Description: "Todo",
             Title: id,
             Metadata: make([]TreebankMetadata, 0),
+        }
+    
+        for _, dactfile := range dactfiles {
+            dactFileNameSplit := strings.FieldsFunc(dactfile, func(c rune) bool { return c == '/' || c == '\\' || c == '.' })
+            dactFileName := dactFileNameSplit[len(dactFileNameSplit)-2]
+    
+            treebanks[id].Components[dactfile] = TreebankComponent{
+                Database_id: dactFileName,
+                Description: dactFileName,
+                Sentences: "?",
+                Title: dactFileName,
+                Words: "?",
+            }
         }
     }
 

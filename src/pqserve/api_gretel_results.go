@@ -12,10 +12,17 @@ import (
     "io/ioutil"
 )
 
-func min(a int, b int) int {
+func mini(a int, b int) int {
     if a < b { 
         return a 
     } 
+    return b
+}
+
+func maxi(a int, b int) int {
+    if a > b {
+        return a
+    }
     return b
 }
 
@@ -33,33 +40,39 @@ type XPathVariable struct {
 
 type RequestPayload struct {
     // The xpath expression to query the db
-    XPath string                `json:field_xpath`
+    XPath string                `json:"xpath"`
     // TODO - Retrieve context around xpath results (or something like it)
-    Context bool                `json:field_retrieveContext`
+    Context bool                `json:"retrieveContext"`
     // corpus to search
-    Corpus  string              `json:field_corpus`
+    Corpus  string              `json:"corpus"`
     // variables to also output
-    Variables []XPathVariable   `json:field_variables`
+    Variables []XPathVariable   `json:"variables"`
     // the page that's being requested, maps to a set of results at a specific offset
-    Iteration int               `json:field_iteration`
+    Page int                    `json:"iteration"`
     // Is this an analysis request, means larger result subsets are returned?
-    Analysis bool               `json:field_isAnalysis`
+    Analysis bool               `json:"isAnalysis"`
 
     // Unused - todo investigate whether (and how) to mock these fields in the response
     // Relevance within gretel4 not entirely known yet
     // set of unprocessed components - pingponged between client and server?
-    RemainingDatabases []string `json:field_remainingDatabases`
+    RemainingDactFiles *[]string `json:"remainingDatabases"`
     // subcomponents of the corpus to search
-    Components []string         `json:field_components`
+    DactFiles []string          `json:"components"`
+    // It seems components is only used to populate remainingDatabases on the first request
+    // then afterwards it's ignored and remainingdatabases is solely used.
+    // This still leaves the case of the "iteration" int
+    // what if we crossed into the next database halfway a page
+    // then how do we know where to place the startindex, because it's not a multiple of the flushlimit (aka pagesize)
 }
 
+// from gretel4 config.php 
+const resultsLimit = 500
+const analysisLimit = 50000
+// undefined in gretel4?
+// const analysisFlushLimit := 
+
 func api_gretel_results(q *Context) {
-    // from gretel4 config.php 
-    const resultsLimit = 500
-    const analysisLimit = 50000
-    // undefined in gretel4?
-    // const analysisFlushLimit := 
-    var flushLimit = 50
+    var pageSize = 50
     var searchLimit = resultsLimit
 
     // TODO we're currently accessing through query parameters
@@ -75,17 +88,17 @@ func api_gretel_results(q *Context) {
     }
 
     if payload.Analysis {
-        flushLimit = analysisLimit
+        pageSize = analysisLimit
         searchLimit = analysisLimit
     }
 
-    startOffset := min(payload.Iteration * flushLimit, searchLimit)
-    endOffset := min((payload.Iteration+1) * flushLimit, searchLimit)
-    if startOffset >= searchLimit {
-        return; // TODO proper empty response 
+    // this is a bit dumb, but whatever.
+    var remainingDactFiles = payload.RemainingDactFiles
+    if remainingDactFiles == nil {
+        remainingDactFiles = &payload.DactFiles
     }
 
-    resultJson := getResults(q, startOffset, endOffset, payload.XPath, payload.Context, payload.Corpus, payload.Variables);
+    resultJson := getResults(q, *remainingDactFiles, payload.Page, pageSize, searchLimit, payload.XPath, payload.Context, payload.Corpus, payload.Variables);
     
     q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
     q.w.Header().Set("Cache-Control", "no-cache")
@@ -98,139 +111,130 @@ func api_gretel_results(q *Context) {
     // TODO
 }
 
-func getResults(q *Context, startOffset int, endOffset int, xpath string, context bool, corpus string, variables []XPathVariable) string {
-    dactfiles := make([]string, 0)
-    rows, errval := q.db.Query(fmt.Sprintf("SELECT `arch` FROM `%s_c_%s_arch` ORDER BY `id`", Cfg.Prefix, corpus))
-    if logerr(errval) {
-        return ""
+// TODO use exceptions, error return code?
+func getResults(q *Context, remainingDactFiles []string, page int, pageSize int, resultLimit int, xpath string, context bool, corpus string, variables []XPathVariable) string {
+    startIndex := pageSize * page;
+    endIndex := mini(pageSize * (page + 1), resultLimit)
+    if startIndex >= endIndex || len(remainingDactFiles) == 0 {
+        return "Out of bounds or no remaining databases to search"; // TODO/empty response 
     }
-    for rows.Next() {
-        var s string
-        errval = rows.Scan(&s)
-        if logerr(errval) {
-            rows.Close()
-            return ""
-        }
-        if strings.HasSuffix(s, ".dact") {
-            dactfiles = append(dactfiles, s)
-        }
-    }
-    errval = rows.Err()
+    dactFile := remainingDactFiles[0]
+    dactFileNameSplit := strings.FieldsFunc(dactFile, func(c rune) bool { return c == '/' || c == '\\' || c == '.' })
+    dactFileName := dactFileNameSplit[len(dactFileNameSplit)-2]
+            
+    
+    sentenceMap := make(map[string]string)
+    tbMap := make(map[string]string) // unused? only for grinded/sonar corpus?
+    nodeIdMap := make(map[string]string)
+    beginsMap := make(map[string]string)
+    xmlSentencesMap := make(map[string]string)
+    metaMap := make(map[string]string)
+    variablesMap := make(map[string]string)
+    originMap := make(map[string]string) // database where the sentence originated - we store the name of the dactfile here for now
+
+    db, errval := dbxml.OpenRead(dactFile) // hopefully the dactfile name alone is enough, and we don't need the absolute path.
     if logerr(errval) {
-        return ""
+        return "Cannot open database " + dactFile
     }
 
-    if len(dactfiles) == 0 {
-        fmt.Fprintln(q.w, "Er zijn geen dact-bestanden voor dit corpus")
-        return ""
+    xquery := createXquery(startIndex, endIndex, xpath, context, variables)
+
+    var qu *dbxml.Query
+    qu, errval = db.Prepare(xquery, false, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
+    if logerr(errval) {
+        return "Invalid query " + xquery
+    }
+    
+    docs, errval := qu.Run()
+    if logerr(errval) {
+        return "Cannot execute query " + xquery
+    }
+
+    // read results
+    var matches []string
+    for docs.Next() {
+        // const name = docs.Name()
+        // const content = docs.Content()
+        // const match = docs.Match()
+
+        matches = append(matches, strings.Split(docs.Match(), "</match>")...)
+
+        // now process match? this will be stupid
+        // let's first attempt to just echo the matches
+    }
+
+    // Process results
+
+    // varsRegex, errval := regexp.Compile("<vars>.*</vars>/s")
+    // if logerr(errval) {
+    //     return ""
+    // }
+
+    for i, match := range matches {
+        match = strings.TrimSpace(match)
+        match = strings.Replace(match, "<match>", "", -1)
+        if len(match) == 0 {
+            continue
+        }
+
+        split := strings.Split(match, "||")
+        
+        // Add unique identifier to avoid overlapping sentences w/ same ID
+        // Not entirely correct, endPos previously held endPosIteration (was page number? [endoffset / flushlimit])
+        sentenceId := strings.TrimSpace(split[0])+"-endPos="+strconv.Itoa(endIndex)+"+match="+strconv.Itoa(i) // usually empty (in testcorpus 'cdb' at least)
+        sentence := strings.TrimSpace(split[1])
+        nodeIds := split[2]
+        begins := split[3]
+        xmlSentences := split[4]
+        meta := split[5] // usually empty (in testcorpus 'cdb' at least)
+        variables := split[6] // usually empty (only when variables requested by user)
+        
+        if len(sentence) == 0 || len(nodeIds) == 0 || len(begins) == 0 {
+            continue
+        }
+        
+        sentenceMap[sentenceId] = sentence
+        nodeIdMap[sentenceId] = nodeIds
+        beginsMap[sentenceId] = begins
+        xmlSentencesMap[sentenceId] = xmlSentences 
+        metaMap[sentenceId] = meta
+        variablesMap[sentenceId] = variables
+        originMap[sentenceId] = dactFileName
+    }
+
+    // done with this dact file, remove it from the remaining files
+    // and reset the page (it will be applied to the next dact file in the next request).
+    if len(matches) < (endIndex - startIndex) { 
+        remainingDactFiles = remainingDactFiles[1:]
+        page = -1 // We always increment current page by 1 so set to -1 to return page 0 to client
+    }
+
+    // TODO we need to echo the dact files that haven't been search yet
+    // the iteration (endOffset) is wrong as well
+    // we also need to search across multiple dact files if we haven't found enough results yet
+    result := []interface{}{sentenceMap, tbMap, nodeIdMap, beginsMap, xmlSentencesMap, metaMap, variablesMap, page+1, remainingDactFiles, originMap, xquery}
+    
+    rbyte, errval := json.Marshal(result)
+    if logerr(errval) {
+        return "Cannot marshal response"
+    }
+    rbyte = json.RawMessage(rbyte)
+    if logerr(errval) {
+        return "Cannot encode response"
     }
     
 
-    for _, dactfile := range dactfiles {
-        db, errval := dbxml.OpenRead(dactfile)
-        if logerr(errval) {
-            return ""
-        }
-
-		// xquery := "(for $node in //node[ @cat=\"smain\" and node[@rel=\"su\" and @pt=\"vnw\"] and node[@rel=\"hd\" and @pt=\"ww\"] and node[@rel=\"predc\" and @cat=\"np\" and node[@rel=\"det\" and @pt=\"lid\"] and node[@rel=\"hd\" and @pt=\"n\"]]] let $tree := ($node/ancestor::alpino_ds) let $sentid := ($tree/@id) let $sentence := ($tree/sentence) let $ids := ($node//@id) let $begins := ($node//@begin) let $beginlist := (distinct-values($begins)) let $meta := ($tree/metadata/meta) return <match>{data($sentid)}||{data($sentence)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||</match>)[position() >= 1 to 50]"
-        xquery := createXquery(dactfile, startOffset, endOffset, xpath, context, variables)
+    return string(rbyte[:])
     
-        var qu *dbxml.Query
-        qu, errval = db.Prepare(xquery, false, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
-        if logerr(errval) {
-            return ""
-        }
-        
-        docs, errval := qu.Run()
-        if logerr(errval) {
-            return ""
-        }
+    // fmt.println(q.w, json)
+    // return resultJson
 
-        // read results
-        var matches []string
-        for docs.Next() {
-            // const name = docs.Name()
-            // const content = docs.Content()
-            // const match = docs.Match()
-
-            matches = append(matches, strings.Split(docs.Match(), "</match>")...)
-
-            // now process match? this will be stupid
-            // let's first attempt to just echo the matches
-        }
-
-        sentenceMap := make(map[string]string)
-        tbMap := make(map[string]string) // unused? only for grinded/sonar corpus?
-        nodeIdMap := make(map[string]string)
-        beginsMap := make(map[string]string)
-        xmlSentencesMap := make(map[string]string)
-        metaMap := make(map[string]string)
-        variablesMap := make(map[string]string)
-        originMap := make(map[string]string) // database where the sentence originated - we store the dactfile here for now
-
-        // Process results
-
-        // varsRegex, errval := regexp.Compile("<vars>.*</vars>/s")
-        // if logerr(errval) {
-        //     return ""
-        // }
-
-        for i, match := range matches {
-            match = strings.TrimSpace(match)
-            match = strings.Replace(match, "<match>", "", -1)
-            if len(match) == 0 {
-                continue
-            }
-
-            split := strings.Split(match, "||")
-            
-            // Add unique identifier to avoid overlapping sentences w/ same ID
-            // Not entirely correct, endPos previously held endPosIteration (was page number? [endoffset / flushlimit])
-            sentenceId := strings.TrimSpace(split[0])+"-endPos="+strconv.Itoa(endOffset)+"+match="+strconv.Itoa(i) // usually empty (in testcorpus 'cdb' at least)
-            sentence := strings.TrimSpace(split[1])
-            nodeIds := split[2]
-            begins := split[3]
-            xmlSentences := split[4]
-            meta := split[5] // usually empty (in testcorpus 'cdb' at least)
-            variables := split[6] // usually empty (only when variables requested by user)
-            
-            
-            if len(sentence) == 0 || len(nodeIds) == 0 || len(begins) == 0 {
-                continue
-            }
-            
-            sentenceMap[sentenceId] = sentence
-            nodeIdMap[sentenceId] = nodeIds
-            beginsMap[sentenceId] = begins
-            xmlSentencesMap[sentenceId] = xmlSentences 
-            metaMap[sentenceId] = meta
-            variablesMap[sentenceId] = variables
-            originMap[sentenceId] = dactfile
-        }
-
-        result := []interface{}{sentenceMap, tbMap, nodeIdMap, beginsMap, xmlSentencesMap, metaMap, variablesMap, endOffset, "[]" /* remaining basex databases to process, not applicable */, originMap, xquery}
-        
-        rbyte, errval := json.Marshal(result)
-        if logerr(errval) {
-            return ""
-        }
-        rbyte = json.RawMessage(rbyte)
-        if logerr(errval) {
-            return ""
-        }
-        
-
-        return string(rbyte[:])
-        
-        // fmt.println(q.w, json)
-        // return resultJson
-
-        // TODO maybe store remaining dact files in the remaining databases? 
-        // also continue across dact file borders if we haven't yet processed enough results for our window
-        // TODO acquire some test data using multiple dact files.
-        // also what to do with dactx data?
-    }
-    return "" // TODO when no files that should probably signal an error (there might be other issues before here with missing mysql tables or something)
+    // TODO maybe store remaining dact files in the remaining databases? 
+    // also continue across dact file borders if we haven't yet processed enough results for our window
+    // TODO acquire some test data using multiple dact files.
+    // also what to do with dactx data?
+    
+    
 
     // $results = getSentences($corpus, $databases, $already, $start, $session, null, $searchLimit, $xpath, $context, $variables);
     // if ($results[7] * $flushLimit >= $searchLimit) {
@@ -351,7 +355,7 @@ Example query from gretel4
 )
 [position() = 51 to 100]
 */
-func createXquery(dactfile string, startIndex int, endIndex int, xpath string, context bool, variables []XPathVariable) string {
+func createXquery(startIndex int, endIndex int, xpath string, context bool, variables []XPathVariable) string {
     var variable_declarations string;
     var variable_results string;
     for _, variable := range variables {
