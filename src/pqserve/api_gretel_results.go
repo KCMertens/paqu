@@ -52,9 +52,8 @@ type RequestPayload struct {
     // Is this an analysis request, means larger result subsets are returned?
     Analysis bool               `json:"isAnalysis"`
 
-    // Unused - todo investigate whether (and how) to mock these fields in the response
-    // Relevance within gretel4 not entirely known yet
-    // set of unprocessed components - pingponged between client and server?
+    // Set of unprocessed components - pingponged between client and server (except on first request
+    //  in which case DactFiles is used)
     RemainingDactFiles *[]string `json:"remainingDatabases"`
     // subcomponents of the corpus to search
     DactFiles []string          `json:"components"`
@@ -201,9 +200,7 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
         page = -1 // We always increment current page by 1 so set to -1 to return page 0 to client
     }
 
-    // TODO we need to echo the dact files that haven't been search yet
-    // the iteration (endOffset) is wrong as well
-    // we also need to search across multiple dact files if we haven't found enough results yet
+    // TODO we should search across multiple dact files if we haven't found enough results to fill a page yet
     result := []interface{}{sentenceMap, tbMap, nodeIdMap, beginsMap, xmlSentencesMap, metaMap, variablesMap, page+1, remainingDactFiles, originMap, xquery}
     
     rbyte, errval := json.Marshal(result)
