@@ -184,7 +184,6 @@ func main() {
 
 	handleFunc("xpath", xpath)
 	handleFunc("dlx", xpathdl)
-	handleFunc("xpathapi", xpathapi)
 	handleFunc("xpathcheck", xpathcheck)
 	handleFunc("xstatsmeta", xstatsmeta)
 	handleFunc("xpathstats", xpathstats)

@@ -16,7 +16,7 @@ func main() {
 		return
 	}
 
-	_, err = db.Prepare(os.Args[2])
+	_, err = db.Prepare(os.Args[2], true)
 	if err != nil {
 		fmt.Println(err)
 		db.Close()
