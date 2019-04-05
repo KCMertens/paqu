@@ -3,148 +3,102 @@
 package main
 
 import (
-//     "github.com/pebbe/dbxml"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"strconv"
 
-    "fmt"
-//     "strconv"
-//     "strings"
-    // "encoding/json"
-//     "io/ioutil"
+	"github.com/pebbe/dbxml"
 )
 
-// type TreebankComponent struct {
-//     Database_id string  `json:"database_id"`
-//     Description string  `json:"description"`
-//     Sentences int       `json:"sentences"`
-//     Title string        `json:"title"`
-//     Words int           `json:"words"`
-// }
-
-// type TreebankMetadata struct {
-//     Field string    `json:"field"`
-//     Type string     `json:"type"` // 'text' | 'int' | 'date',
-//     Facet string    `json:"facet"` // 'checkbox' | 'slider' | 'range' | 'dropdown',
-//     Show bool       `json:"show"`
-    
-//     //minValue?: number | Date,
-//     //maxValue?: number | Date
-// }
-
-// type Treebank struct {
-//     Components map[string]TreebankComponent `json:"components"`
-//     Description string                      `json:"description"`
-//     Title string                            `json:"title"`
-//     Metadata []TreebankMetadata             `json:"metadata"`
-// }
-
-// corpus/component(?):metadatakey: count 
+type gretelCountsPayload struct {
+	DactFiles *[]string `json:"components"`
+	Corpus    string    `json:"corpus"`
+	XPath     string    `json:"xpath"`
+}
 
 // In gretel4, the string key refers to a basex database (such as "LASSY_ID_WSU")
 // String key for us should probably refer to a dact file
 // It's important this map contains all keys in the Components property of the configured_treebanks response (api_gretel_configured_treebanks)
-type TreebankCountsResponse map[string]int
+// type gretelCountsResponse map[string]int
+type gretelCountsResponse map[string]interface{}
 
-// $router->map('POST', '/metadata_counts', function () {
-//     $input = file_get_contents('php://input');
-//     $data = json_decode($input, true);
-//     $corpus = $data['corpus'];
-//     $components = $data['components'];
-//     $xpath = $data['xpath'];
-
-//     $counts = get_metadata_counts($corpus, $components, $xpath);
-//     header('Content-Type: application/json');
-//     echo json_encode($counts);
-// });
-
-
-// function get_metadata_counts($corpus, $components, $xpath)
-// {
-//     global $dbuser, $dbpwd;
-
-//     if ($corpus == 'sonar') {
-//         $serverInfo = getServerInfo($corpus, $components[0]);
-//     } else {
-//         $serverInfo = getServerInfo($corpus, false);
-//     }
-
-//     $databases = corpusToDatabase($components, $corpus);
-
-//     $dbhost = $serverInfo['machine'];
-//     $dbport = $serverInfo['port'];
-//     $session = new Session($dbhost, $dbport, $dbuser, $dbpwd);
-
-//     $result = array();
-//     foreach ($databases as $database) {
-//         $xquery = '{
-//             for $n
-//             in (
-//                 for $node
-//                 in db:open("'.$database.'")'.$xpath.'
-//                 return $node/ancestor::alpino_ds/metadata/meta)
-//             let $k := $n/@name
-//             let $t := $n/@type
-//             group by $k, $t
-//             order by $k, $t
-
-//             return element meta {
-//                 attribute name {$k},
-//                 attribute type {$t},
-//                 for $m in $n
-//                 let $v := $m/@value
-//                 group by $v
-//                 return element count { 
-//                     attribute value {$v}, count($m)
-//                 }
-//             }
-//         }';
-
-//         $m_query = '<metadata>'.$xquery.'</metadata>';
-
-//         $query = $session->query($m_query);
-//         $result[$database] = $query->execute();
-//         $query->close();
-//     }
-//     $session->close();
-
-//     // Combine the XMLs into an array with total counts over all databases
-//     $totals = array();
-//     foreach ($result as $db => $m) {
-//         $xml = new SimpleXMLElement($m);
-//         foreach ($xml as $group => $counts) {
-//             $name = (string) $counts['name'];
-//             $a2 = array();
-//             foreach ($counts as $k => $v) {
-//                 $a2[(string) $v['value']] = (int) $v;
-//             }
-//             if (isset($totals[$name])) {
-//                 $a1 = $totals[$name];
-//                 $sums = array();
-//                 foreach (array_keys($a1 + $a2) as $key) {
-//                     $sums[$key] = (isset($a1[$key]) ? $a1[$key] : 0) + (isset($a2[$key]) ? $a2[$key] : 0);
-//                 }
-//                 $totals[$name] = $sums;
-//             } else {
-//                 $totals[$name] = $a2;
-//             }
-//         }
-//     }
-
-//     return $totals;
-// }
-
-// TODO return number of hits per subcomponent in this corpus
-// if unknown, we may be able to send '?' where the count is normally located.
 func api_gretel_treebank_counts(q *Context) {
-    
-    q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
-    q.w.Header().Set("Cache-Control", "no-cache")
-    q.w.Header().Add("Pragma", "no-cache")
-    
-    // TODO this is very incorrect, needs to actually be the number of hits
-    // for now we just mock the configured_treebanks response, so we can also mock this (sort of) as we know we only specify the "default" component
-    // why not have the results contain a property detailing their origination in the actual results object...
-    // then the client can perform this.
-    fmt.Fprint(q.w, "{\"default\": 1}")
+
+	requestBody, err := ioutil.ReadAll(q.r.Body)
+	if gretelSendErr("Error reading request body", q, err) {
+		return
+	}
+
+	var payload gretelCountsPayload
+	err = json.Unmarshal(requestBody, &payload)
+	if gretelSendErr("Invalid JSON in request body", q, err) {
+		return
+	}
+
+	// gretelSendErr("kjshdkfjhsdf", q, errors.New(string(payload.DactFiles[0])))
+	// return
+
+	counts := make(gretelCountsResponse, 0)
+
+	for _, dactFile := range *payload.DactFiles {
+		db, errval := dbxml.OpenRead(dactFile) // dactfile should be the full path, on the client we store this in the component.id field
+
+		// gretelSendErr(dactFile, q, errors.New("test error"))
+		// return
+
+		if gretelSendErr("Error opening database "+dactFile, q, errval) {
+			return
+		}
+
+		xquery := createXquery(payload.XPath)
+
+		var qu *dbxml.Query
+		qu, errval = db.Prepare(xquery, false, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
+		if gretelSendErr("Invalid query "+xquery, q, errval) {
+			return
+		}
+
+		count, errval := qu.Run()
+		if gretelSendErr("Error executing query "+xquery, q, errval) {
+			return
+		}
+
+		// i := 0
+		// for count.Next() {
+		// 	i++
+		// }
+
+		if !count.Next() {
+			gretelSendErr("", q, count.Error())
+			return
+		}
+		counts[dactFile], errval = strconv.Atoi(count.Value())
+
+		// a, errval := json.Marshal(count.Everything())
+		// counts[dactFile] = string(json.RawMessage(a)[:])
+
+		// count.Next()
+		// n, errval := strconv.Atoi(count.Match())
+		// counts[dactFile] = n
+		if gretelSendErr("Invalid query result "+count.Match(), q, errval) {
+			return
+		}
+	}
+
+	q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	q.w.Header().Set("Cache-Control", "no-cache")
+	q.w.Header().Add("Pragma", "no-cache")
+
+	rbyte, errval := json.Marshal(counts)
+	if gretelSendErr("Cannot marshal response", q, errval) {
+		return
+	}
+
+	fmt.Fprint(q.w, string(json.RawMessage(rbyte)[:]))
 }
 
-// TODO see gretel4/
+func createXquery(xpath string) string {
+	return "(count(collection()" + xpath + "))"
+	// return "5"
+}

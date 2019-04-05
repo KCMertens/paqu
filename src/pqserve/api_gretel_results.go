@@ -3,6 +3,8 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/pebbe/dbxml"
 
 	"encoding/json"
@@ -32,13 +34,13 @@ func unpack(s []string, vars ...*string) {
 	}
 }
 
-type XPathVariable struct {
+type xPathVariable struct {
 	// skip variable declaration in xquery if name == $node, that variable is already defined
 	name string
 	path string
 }
 
-type RequestPayload struct {
+type gretelResultsPayload struct {
 	// The xpath expression to query the db
 	XPath string `json:"xpath"`
 	// TODO - Retrieve context around xpath results (or something like it)
@@ -46,85 +48,78 @@ type RequestPayload struct {
 	// corpus to search
 	Corpus string `json:"corpus"`
 	// variables to also output
-	Variables []XPathVariable `json:"variables"`
+	Variables []xPathVariable `json:"variables"`
 	// the page that's being requested, maps to a set of results at a specific offset
 	Page int `json:"iteration"`
 	// Is this an analysis request, means larger result subsets are returned?
 	Analysis bool `json:"isAnalysis"`
 
 	// Set of unprocessed components - pingponged between client and server (except on first request
-	//  in which case DactFiles is used)
+	//  in which case ComponentsToSearch is used)
 	RemainingDactFiles *[]string `json:"remainingDatabases"`
-	// subcomponents of the corpus to search
-	DactFiles []string `json:"components"`
-	// It seems components is only used to populate remainingDatabases on the first request
-	// then afterwards it's ignored and remainingdatabases is solely used.
-	// This still leaves the case of the "iteration" int
-	// what if we crossed into the next database halfway a page
-	// then how do we know where to place the startindex, because it's not a multiple of the flushlimit (aka pagesize)
+	// subcomponents of the corpus to search, used to initialize RemainingComponents if present
+	DactFilesToSearch []string `json:"components"`
 }
 
 // from gretel4 config.php
-const resultsLimit = 500
+const searchLimit = 500
 const analysisLimit = 50000
-
-// undefined in gretel4?
-// const analysisFlushLimit :=
+const searchPageSize = 50
+const analysisPageSize = 50000
 
 func api_gretel_results(q *Context) {
-	var pageSize = 50
-	var searchLimit = resultsLimit
-
-	// TODO we're currently accessing through query parameters
 	requestBody, err := ioutil.ReadAll(q.r.Body)
-	if logerr(err) {
+	if gretelSendErr("Error reading request body", q, err) {
 		return
 	}
 
-	var payload RequestPayload
+	var payload gretelResultsPayload
 	err = json.Unmarshal(requestBody, &payload)
-	if logerr(err) {
+	if gretelSendErr("Invalid JSON in request body", q, err) {
 		return
 	}
 
-	if payload.Analysis {
-		pageSize = analysisLimit
-		searchLimit = analysisLimit
-	}
+	pageSize, searchLimit := func() (int, int) {
+		if payload.Analysis {
+			return analysisPageSize, analysisLimit
+		}
+		return searchPageSize, searchLimit
+	}()
 
 	// this is a bit dumb, but whatever.
-	var remainingDactFiles = payload.RemainingDactFiles
-	if remainingDactFiles == nil {
-		remainingDactFiles = &payload.DactFiles
+	var remainingDactFiles = &payload.RemainingDactFiles
+	if *remainingDactFiles == nil {
+		files, err := getDactFiles(q.db, payload.Corpus)
+
+		if gretelSendErr("", q, err) {
+			return
+		}
+		*remainingDactFiles = &files
 	}
 
-	resultJson := getResults(q, *remainingDactFiles, payload.Page, pageSize, searchLimit, payload.XPath, payload.Context, payload.Corpus, payload.Variables)
+	resultJSON, err := getResults(q, **remainingDactFiles, payload.Page, pageSize, searchLimit, payload.XPath, payload.Context, payload.Corpus, payload.Variables)
+	if gretelSendErr("", q, err) {
+		return
+	}
 
 	q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	q.w.Header().Set("Cache-Control", "no-cache")
 	q.w.Header().Add("Pragma", "no-cache")
 
-	fmt.Fprint(q.w, resultJson)
-	// if ff, ok := q.w.(http.Flusher); ok {
-	// 	ff.Flush()
-	// }
-	// TODO
+	fmt.Fprint(q.w, resultJSON)
 }
 
 // TODO use exceptions, error return code?
-func getResults(q *Context, remainingDactFiles []string, page int, pageSize int, resultLimit int, xpath string, context bool, corpus string, variables []XPathVariable) string {
+func getResults(q *Context, remainingDactFiles []string, page int, pageSize int, resultLimit int, xpath string, context bool, corpus string, variables []xPathVariable) (string, error) {
 	startIndex := pageSize * page
 	endIndex := mini(pageSize*(page+1), resultLimit)
 	if startIndex >= endIndex || len(remainingDactFiles) == 0 {
-		return "Out of bounds or no remaining databases to search" // TODO/empty response
+		return "", errors.New("Out of bounds or no remaining databases to search")
 	}
 	dactFile := remainingDactFiles[0]
-	dactFileNameSplit := strings.FieldsFunc(dactFile, func(c rune) bool { return c == '/' || c == '\\' || c == '.' })
-	dactFileName := dactFileNameSplit[len(dactFileNameSplit)-2]
-
 	sentenceMap := make(map[string]string)
 	tbMap := make(map[string]string) // unused? only for grinded/sonar corpus?
-	nodeIdMap := make(map[string]string)
+	nodeIDMap := make(map[string]string)
 	beginsMap := make(map[string]string)
 	xmlSentencesMap := make(map[string]string)
 	metaMap := make(map[string]string)
@@ -132,70 +127,68 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 	originMap := make(map[string]string) // database where the sentence originated - we store the name of the dactfile here for now
 
 	db, errval := dbxml.OpenRead(dactFile) // dactfile should be the full path, on the client we store this in the component.server_id field
-	if logerr(errval) {
-		return "Cannot open database " + dactFile
+	if errval != nil {
+		return "", errors.New("Cannot open database " + dactFile)
 	}
 
-	xquery := createXquery(startIndex, endIndex, xpath, context, variables)
+	xquery := xquery_gretel_results(startIndex, endIndex, xpath, context, variables)
 
 	var qu *dbxml.Query
 	qu, errval = db.Prepare(xquery, false, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
-	if logerr(errval) {
-		return "Invalid query " + xquery
+	if errval != nil {
+		return "", errors.New("Invalid query: " + xquery)
 	}
 
 	docs, errval := qu.Run()
-	if logerr(errval) {
-		return "Cannot execute query " + xquery
+	if errval != nil {
+		return "", errors.New("Cannot execute query: " + xquery)
 	}
 
 	// read results
-	var matches []string
+	matches := make(map[string]string)
+	i := 0
 	for docs.Next() {
-		// const name = docs.Name()
-		// const content = docs.Content()
-		// const match = docs.Match()
+		// docname := docs.Name()
+		matches := strings.Split(docs.Match(), "</match>")
+		for _, match := range matches {
 
-		matches = append(matches, strings.Split(docs.Match(), "</match>")...)
-	}
+			match = strings.TrimSpace(match)
+			match = strings.Replace(match, "<match>", "", -1)
+			if len(match) == 0 {
+				continue
+			}
 
-	// Process results
+			split := strings.Split(match, "||")
 
-	for i, match := range matches {
-		match = strings.TrimSpace(match)
-		match = strings.Replace(match, "<match>", "", -1)
-		if len(match) == 0 {
-			continue
+			// Add unique identifier to avoid overlapping sentences w/ same ID
+			// Not entirely correct, endPos previously held endPosIteration (was page number? [endoffset / flushlimit])
+			sentenceId := strings.TrimSpace(split[0]) + "-endPos=" + strconv.Itoa(endIndex) + "+match=" + strconv.Itoa(i) // usually empty (in testcorpus 'cdb' at least)
+			sentence := strings.TrimSpace(split[1])
+			nodeIds := split[2]
+			begins := split[3]
+			xmlSentences := split[4]
+			meta := split[5]      // usually empty (in testcorpus 'cdb' at least)
+			variables := split[6] // usually empty (only when variables requested by user)
+
+			if len(sentence) == 0 || len(nodeIds) == 0 || len(begins) == 0 {
+				continue
+			}
+
+			sentenceMap[sentenceId] = sentence
+			nodeIDMap[sentenceId] = nodeIds
+			beginsMap[sentenceId] = begins
+			xmlSentencesMap[sentenceId] = xmlSentences
+			metaMap[sentenceId] = meta
+			variablesMap[sentenceId] = variables
+			originMap[sentenceId] = dactFile
+
+			i++
 		}
-
-		split := strings.Split(match, "||")
-
-		// Add unique identifier to avoid overlapping sentences w/ same ID
-		// Not entirely correct, endPos previously held endPosIteration (was page number? [endoffset / flushlimit])
-		sentenceId := strings.TrimSpace(split[0]) + "-endPos=" + strconv.Itoa(endIndex) + "+match=" + strconv.Itoa(i) // usually empty (in testcorpus 'cdb' at least)
-		sentence := strings.TrimSpace(split[1])
-		nodeIds := split[2]
-		begins := split[3]
-		xmlSentences := split[4]
-		meta := split[5]      // usually empty (in testcorpus 'cdb' at least)
-		variables := split[6] // usually empty (only when variables requested by user)
-
-		if len(sentence) == 0 || len(nodeIds) == 0 || len(begins) == 0 {
-			continue
-		}
-
-		sentenceMap[sentenceId] = sentence
-		nodeIdMap[sentenceId] = nodeIds
-		beginsMap[sentenceId] = begins
-		xmlSentencesMap[sentenceId] = xmlSentences
-		metaMap[sentenceId] = meta
-		variablesMap[sentenceId] = variables
-		originMap[sentenceId] = dactFileName
 	}
 
 	// done with this dact file, remove it from the remaining files
 	// and reset the page (it will be applied to the next dact file in the next request).
-	if len(matches) < (endIndex - startIndex) {
+	if (startIndex + len(matches)) < endIndex {
 		remainingDactFiles = remainingDactFiles[1:]
 		page = -1 // We always increment current page by 1 so set to -1 to return page 0 to client
 	}
@@ -205,7 +198,7 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 		"success":            true,
 		"sentences":          sentenceMap,
 		"tblist":             tbMap,
-		"idlist":             nodeIdMap,
+		"idlist":             nodeIDMap,
 		"beginlist":          beginsMap,
 		"xmllist":            xmlSentencesMap,
 		"metalist":           metaMap,
@@ -214,24 +207,17 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 		"databases":          remainingDactFiles,
 		"sentenceDatabases":  originMap,
 		"xquery":             xquery,
-		"already":            nil, // TODO, but unused in the frontend anyway
-		"needRegularGrinded": false,
+		"already":            nil,   // for grinded databases, which is not used in paqu
+		"needRegularGrinded": false, // likewise
 		"searchLimit":        resultLimit,
 	}
 
-	//     sentenceMap, tbMap, nodeIdMap, beginsMap, xmlSentencesMap, metaMap, variablesMap, page+1, remainingDactFiles, originMap, xquery
-	// }
-
 	rbyte, errval := json.Marshal(result)
-	if logerr(errval) {
-		return "Cannot marshal response"
-	}
-	rbyte = json.RawMessage(rbyte)
-	if logerr(errval) {
-		return "Cannot encode response"
+	if errval != nil {
+		return "", errors.New("Cannot marshal response")
 	}
 
-	return string(rbyte[:])
+	return string(json.RawMessage(rbyte)[:]), nil
 }
 
 /*
@@ -261,13 +247,13 @@ Example query from gretel4
 )
 [position() = 51 to 100]
 */
-func createXquery(startIndex int, endIndex int, xpath string, context bool, variables []XPathVariable) string {
-	var variable_declarations string
-	var variable_results string
+func xquery_gretel_results(startIndex int, endIndex int, xpath string, context bool, variables []xPathVariable) string {
+	var variableDeclarations string
+	var variableResults string
 	for _, variable := range variables {
-		variable_results += "<var name=\"" + variable.name + "\">{'" + variable.name + "'/@*}</var>"
+		variableResults += "<var name=\"" + variable.name + "\">{'" + variable.name + "'/@*}</var>"
 		if variable.name != "$node" { // variable $node already exists in query
-			variable_declarations += "let " + variable.name + " := ('" + variable.path + "')[1]"
+			variableDeclarations += "let " + variable.name + " := ('" + variable.path + "')[1]"
 		}
 	}
 
@@ -293,11 +279,11 @@ func createXquery(startIndex int, endIndex int, xpath string, context bool, vari
 	var xreturn string
 
 	if context {
-		xreturn = " return <match>{data($sentid)}||{data($prevs)} <em>{data($sentence)}</em> {data($nexts)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||" + variable_results + "</match>"
-		xquery = xfor + tree + sentid + sentence + prevs + nexts + ids + begins + beginlist + meta + variable_declarations + xreturn
+		xreturn = " return <match>{data($sentid)}||{data($prevs)} <em>{data($sentence)}</em> {data($nexts)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||" + variableResults + "</match>"
+		xquery = xfor + tree + sentid + sentence + prevs + nexts + ids + begins + beginlist + meta + variableDeclarations + xreturn
 	} else {
-		xreturn = " return <match>{data($sentid)}||                   {data($sentence)}                    ||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||" + variable_results + "</match>"
-		xquery = xfor + tree + sentid + sentence + ids + begins + beginlist + meta + variable_declarations + xreturn
+		xreturn = " return <match>{data($sentid)}||{data($sentence)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||" + variableResults + "</match>"
+		xquery = xfor + tree + sentid + sentence + ids + begins + beginlist + meta + variableDeclarations + xreturn
 	}
 
 	// apply pagination parameters to the query
