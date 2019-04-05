@@ -1,6 +1,8 @@
 #include "c_dbxml.h"
 #include <dbxml/DbXml.hpp>
 #include <string>
+#include <string.h>
+#include <cstdio>
 
 #define ALIAS "c_dbxml"
 
@@ -300,12 +302,18 @@ extern "C" {
     {
         if (docs->more) {
             try {
+                docs->it.peek(docs->doc);
                 docs->it.peek(docs->value);
                 docs->more = docs->it.next(docs->doc);
-            } catch (DbXml::XmlException &xe) {
-                docs->errstring = xe.what();
-                docs->error = true;
-                docs->more = false;
+            } catch (DbXml::XmlException &ignore) {
+                try {
+                    docs->more = docs->it.next(docs->value);
+                    docs->doc = 0;
+                } catch (DbXml::XmlException &xe) {
+                    docs->errstring = xe.what();
+                    docs->error = true;
+                    docs->more = false;
+                }
             }
             docs->name.clear();
             docs->content.clear();
@@ -316,16 +324,18 @@ extern "C" {
 
     char const * c_dbxml_docs_name(c_dbxml_docs docs)
     {
-        if (docs->more && ! docs->name.size())
+        if (docs->more && docs->doc && ! docs->name.size()) {
             docs->name = docs->doc.getName();
+        }
 
         return docs->name.c_str();
     }
 
     char const * c_dbxml_docs_content(c_dbxml_docs docs)
     {
-        if (docs->more && ! docs->content.size())
+        if (docs->more && docs->doc && ! docs->content.size()) {
             docs->doc.getContent(docs->content);
+        }
 
         return docs->content.c_str();
     }
@@ -337,6 +347,14 @@ extern "C" {
         }
 
         return docs->match.c_str();
+    }
+
+    char const * c_dbxml_docs_value(c_dbxml_docs docs)
+    {
+        std::string v = docs->value.asString();
+        char* r = new char[v.length()+1];
+        strcpy(r, v.c_str());
+        return r;
     }
 
     void c_dbxml_docs_free(c_dbxml_docs docs)

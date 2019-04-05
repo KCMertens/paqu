@@ -418,6 +418,11 @@ func (docs *Docs) Match() string {
 	return docs.getNameContent(3)
 }
 
+// Get expression result, for when it is not an xml element
+func (docs *Docs) Value() string {
+	return docs.getNameContent(4)
+}
+
 func (docs *Docs) getNameContent(what int) string {
 	docs.lock.Lock()
 	defer docs.lock.Unlock()
@@ -431,6 +436,11 @@ func (docs *Docs) getNameContent(what int) string {
 		return C.GoString(C.c_dbxml_docs_content(docs.docs))
 	case 3:
 		return C.GoString(C.c_dbxml_docs_match(docs.docs))
+	case 4:
+		raw := C.c_dbxml_docs_value(docs.docs)
+		gs := C.GoString(raw)
+		C.free(unsafe.Pointer(raw))
+		return gs
 	}
 	return ""
 }
