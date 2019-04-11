@@ -111,7 +111,7 @@ func api_gretel_results(q *Context) {
 
 // TODO use exceptions, error return code?
 func getResults(q *Context, remainingDactFiles []string, page int, pageSize int, resultLimit int, xpath string, context bool, corpus string, variables []xPathVariable) (string, error) {
-	startIndex := pageSize * page
+	startIndex := (pageSize * page) + 1
 	endIndex := mini(pageSize*(page+1), resultLimit)
 	if startIndex >= endIndex || len(remainingDactFiles) == 0 {
 		return "", errors.New("Out of bounds or no remaining databases to search")
@@ -145,11 +145,14 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 	}
 
 	// read results
-	matches := make(map[string]string)
 	i := 0
+	doubleResults := make([]string, 0)
 	for docs.Next() {
 		// docname := docs.Name()
+
 		matches := strings.Split(docs.Match(), "</match>")
+
+		j := 0
 		for _, match := range matches {
 
 			match = strings.TrimSpace(match)
@@ -157,6 +160,11 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 			if len(match) == 0 {
 				continue
 			}
+
+			if j == 1 {
+				doubleResults = append(doubleResults, match)
+			}
+			j++
 
 			split := strings.Split(match, "||")
 
@@ -188,7 +196,7 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 
 	// done with this dact file, remove it from the remaining files
 	// and reset the page (it will be applied to the next dact file in the next request).
-	if (startIndex + len(matches)) < endIndex {
+	if (startIndex + i) < endIndex {
 		remainingDactFiles = remainingDactFiles[1:]
 		page = -1 // We always increment current page by 1 so set to -1 to return page 0 to client
 	}
