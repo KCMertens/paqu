@@ -1,2 +1,4 @@
 run/pqserve.out
 compile_paqu.log
+.vscode/
+_vendor/bin/debug
