@@ -8,6 +8,7 @@ import (
 	"github.com/pebbe/dbxml"
 
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"strconv"
@@ -43,7 +44,8 @@ type xPathVariable struct {
 type gretelResultsPayload struct {
 	// The xpath expression to query the db
 	XPath string `json:"xpath"`
-	// TODO - Retrieve context around xpath results (or something like it)
+	// Retrieve the preceding and following sentences.
+	// This appears to be UNSUPPORTED in dbxml
 	Context bool `json:"retrieveContext"`
 	// corpus to search
 	Corpus string `json:"corpus"`
@@ -59,6 +61,22 @@ type gretelResultsPayload struct {
 	RemainingDactFiles *[]string `json:"remainingDatabases"`
 	// subcomponents of the corpus to search, used to initialize RemainingComponents if present
 	DactFilesToSearch []string `json:"components"`
+}
+
+type innerXML struct {
+	InnerXML string `xml:",innerxml"`
+}
+
+type gretelXqueryResult struct {
+	SentenceID       string     `xml:"sentence-id"`
+	Sentence         innerXML   `xml:"sentence"`
+	NodeBegins       []string   `xml:"node-begins>id"`
+	NodeIDs          []string   `xml:"node-ids>id"`
+	Result           innerXML   `xml:"result"`
+	Meta             innerXML   `xml:"meta"`
+	Variables        []innerXML `xml:"variables>var"`
+	PreviousSentence string     `xml:"prevous-sentence"`
+	NextSentence     string     `xml:"next-sentence"`
 }
 
 // from gretel4 config.php
@@ -86,7 +104,8 @@ func api_gretel_results(q *Context) {
 		return searchPageSize, searchLimit
 	}()
 
-	// this is a bit dumb, but whatever.
+	// This is a bit dumb, but whatever.
+	// If the client didn't supply files to search, search them all.
 	var remainingDactFiles = &payload.RemainingDactFiles
 	if *remainingDactFiles == nil {
 		files, err := getDactFiles(q.db, payload.Corpus)
@@ -109,23 +128,14 @@ func api_gretel_results(q *Context) {
 	fmt.Fprint(q.w, resultJSON)
 }
 
-// TODO use exceptions, error return code?
 func getResults(q *Context, remainingDactFiles []string, page int, pageSize int, resultLimit int, xpath string, context bool, corpus string, variables []xPathVariable) (string, error) {
 	startIndex := (pageSize * page) + 1
 	endIndex := mini(pageSize*(page+1), resultLimit)
 	if startIndex >= endIndex || len(remainingDactFiles) == 0 {
 		return "", errors.New("Out of bounds or no remaining databases to search")
 	}
-	dactFile := remainingDactFiles[0]
-	sentenceMap := make(map[string]string)
-	tbMap := make(map[string]string) // unused? only for grinded/sonar corpus?
-	nodeIDMap := make(map[string]string)
-	beginsMap := make(map[string]string)
-	xmlSentencesMap := make(map[string]string)
-	metaMap := make(map[string]string)
-	variablesMap := make(map[string]string)
-	originMap := make(map[string]string) // database where the sentence originated - we store the name of the dactfile here for now
 
+	dactFile := remainingDactFiles[0]
 	db, errval := dbxml.OpenRead(dactFile) // dactfile should be the full path, on the client we store this in the component.server_id field
 	if errval != nil {
 		return "", errors.New("Cannot open database " + dactFile)
@@ -144,54 +154,38 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 		return "", errors.New("Cannot execute query: " + xquery)
 	}
 
+	sentenceMap := make(map[string]string)
+	nodeIDMap := make(map[string]string)
+	beginsMap := make(map[string]string)
+	xmlSentencesMap := make(map[string]string)
+	metaMap := make(map[string]string)
+	variablesMap := make(map[string]string)
+	originMap := make(map[string]string) // database where the sentence originated - we store the name of the dactfile here for now
+
 	// read results
 	i := 0
-	doubleResults := make([]string, 0)
 	for docs.Next() {
-		// docname := docs.Name()
+		var result gretelXqueryResult
+		resultString := docs.Match()
 
-		matches := strings.Split(docs.Match(), "</match>")
-
-		j := 0
-		for _, match := range matches {
-
-			match = strings.TrimSpace(match)
-			match = strings.Replace(match, "<match>", "", -1)
-			if len(match) == 0 {
-				continue
-			}
-
-			if j == 1 {
-				doubleResults = append(doubleResults, match)
-			}
-			j++
-
-			split := strings.Split(match, "||")
-
-			// Add unique identifier to avoid overlapping sentences w/ same ID
-			// Not entirely correct, endPos previously held endPosIteration (was page number? [endoffset / flushlimit])
-			sentenceId := strings.TrimSpace(split[0]) + "-endPos=" + strconv.Itoa(endIndex) + "+match=" + strconv.Itoa(i) // usually empty (in testcorpus 'cdb' at least)
-			sentence := strings.TrimSpace(split[1])
-			nodeIds := split[2]
-			begins := split[3]
-			xmlSentences := split[4]
-			meta := split[5]      // usually empty (in testcorpus 'cdb' at least)
-			variables := split[6] // usually empty (only when variables requested by user)
-
-			if len(sentence) == 0 || len(nodeIds) == 0 || len(begins) == 0 {
-				continue
-			}
-
-			sentenceMap[sentenceId] = sentence
-			nodeIDMap[sentenceId] = nodeIds
-			beginsMap[sentenceId] = begins
-			xmlSentencesMap[sentenceId] = xmlSentences
-			metaMap[sentenceId] = meta
-			variablesMap[sentenceId] = variables
-			originMap[sentenceId] = dactFile
-
-			i++
+		errval = xml.Unmarshal([]byte(resultString), &result)
+		if errval != nil {
+			return "", errval
 		}
+
+		sentenceID := result.SentenceID
+		sentenceMap[sentenceID] = strings.TrimSpace(strings.Join([]string{result.PreviousSentence, result.Sentence.InnerXML, result.NextSentence}, " "))
+		nodeIDMap[sentenceID] = strings.Join(result.NodeIDs, "-")
+		beginsMap[sentenceID] = strings.Join(result.NodeBegins, "-")
+		xmlSentencesMap[sentenceID] = result.Result.InnerXML
+		metaMap[sentenceID] = result.Meta.InnerXML
+		variablesMap[sentenceID] = ""
+		for _, variable := range result.Variables {
+			variablesMap[sentenceID] = variablesMap[sentenceID] + variable.InnerXML
+		}
+		originMap[sentenceID] = dactFile
+
+		i++
 	}
 
 	// done with this dact file, remove it from the remaining files
@@ -203,21 +197,23 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 
 	// TODO we should search across multiple dact files if we haven't found enough results to fill a page yet
 	result := map[string]interface{}{
+		// unused stuff, and meta info not extracted from the results directly
 		"success":            true,
-		"sentences":          sentenceMap,
-		"tblist":             tbMap,
-		"idlist":             nodeIDMap,
-		"beginlist":          beginsMap,
-		"xmllist":            xmlSentencesMap,
-		"metalist":           metaMap,
-		"varlist":            variablesMap,
-		"endPosIteration":    page + 1,
+		"tblist":             make(map[string]string), // unused. Only for grinded corpora
 		"databases":          remainingDactFiles,
-		"sentenceDatabases":  originMap,
+		"endPosIteration":    page + 1,
 		"xquery":             xquery,
 		"already":            nil,   // for grinded databases, which is not used in paqu
 		"needRegularGrinded": false, // likewise
 		"searchLimit":        resultLimit,
+
+		"sentences":         sentenceMap,
+		"idlist":            nodeIDMap,
+		"beginlist":         beginsMap,
+		"xmllist":           xmlSentencesMap,
+		"metalist":          metaMap,
+		"varlist":           variablesMap,
+		"sentenceDatabases": originMap,
 	}
 
 	rbyte, errval := json.Marshal(result)
@@ -256,45 +252,54 @@ Example query from gretel4
 [position() = 51 to 100]
 */
 func xquery_gretel_results(startIndex int, endIndex int, xpath string, context bool, variables []xPathVariable) string {
-	var variableDeclarations string
-	var variableResults string
+	var optContextDeclaration string
+	var optContextResults string
+	if context {
+		optContextDeclaration = `
+			let $prevs := ($tree/preceding-sibling::alpino_ds[1]/sentence)
+			let $nexts := ($tree/following-sibling::alpino_ds[1]/sentence)
+		`
+
+		optContextResults = `
+			<previous-sentence>{data($prevs)}</previous-sentence>
+			<next-sentence>{data($nexts)}</next-sentence>
+		`
+	}
+
+	var optVariableDeclaration string
+	var optVariableResults string
 	for _, variable := range variables {
-		variableResults += "<var name=\"" + variable.name + "\">{'" + variable.name + "'/@*}</var>"
+		optVariableResults += "<var name=\"" + variable.name + "\">{'" + variable.name + "'/@*}</var>"
 		if variable.name != "$node" { // variable $node already exists in query
-			variableDeclarations += "let " + variable.name + " := ('" + variable.path + "')[1]"
+			optVariableDeclaration += "let " + variable.name + " := ('" + variable.path + "')[1]"
 		}
 	}
 
-	// main node matching and iteration
-	// xfor := "for $node in collection('"+dactfile+"')"+xpath
-	xfor := "for $node in collection()" + xpath
+	return `(
+		for $node in collection()` + xpath + `
+			let $tree := ($node/ancestor::alpino_ds)
+			
+			let $sentid := dbxml:metadata('dbxml:name', $tree)
+			let $sentence := ($tree/sentence)
+			let $begins := ($node//@begin)
+			let $ids := (distinct-values($begins))
+			let $meta := ($tree/metadata/meta)
+	` + optVariableDeclaration + optContextDeclaration + `
 
-	// Extract the following values for all matched nodes
-	tree := " let $tree := ($node/ancestor::alpino_ds)"
-	sentid := " let $sentid := ($tree/@id)" // it seems the .dact files do contain documents whose root is <alpino_ds> but there is no @id attribute...
-	sentence := " let $sentence := ($tree/sentence)"
-	ids := " let $ids := ($node//@id)"
-	begins := " let $begins := ($node//@begin)"
-	beginlist := " let $beginlist := (distinct-values($begins))"
-	meta := " let $meta := ($tree/metadata/meta)"
-
-	// only used when context == true
-	prevs := " let $prevs := ($tree/preceding-sibling::alpino_ds[1]/sentence)"
-	nexts := " let $nexts := ($tree/following-sibling::alpino_ds[1]/sentence)"
-
-	// output of the xquery - print all the extracted variables
-	var xquery string
-	var xreturn string
-
-	if context {
-		xreturn = " return <match>{data($sentid)}||{data($prevs)} <em>{data($sentence)}</em> {data($nexts)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||" + variableResults + "</match>"
-		xquery = xfor + tree + sentid + sentence + prevs + nexts + ids + begins + beginlist + meta + variableDeclarations + xreturn
-	} else {
-		xreturn = " return <match>{data($sentid)}||{data($sentence)}||{string-join($ids, '-')}||{string-join($beginlist, '-')}||{$node}||{$meta}||" + variableResults + "</match>"
-		xquery = xfor + tree + sentid + sentence + ids + begins + beginlist + meta + variableDeclarations + xreturn
-	}
-
-	// apply pagination parameters to the query
-	xquery = "(" + xquery + ")[position() = " + strconv.Itoa(startIndex) + " to " + strconv.Itoa(endIndex) + "]"
-	return xquery
+		return 
+			<match>
+				<sentence-id>{data($sentid)}</sentence-id>
+				<sentence><em>{data($sentence)}</em></sentence>
+				<node-begins>
+					{for $nodeId in $begins return <id>{data($nodeId)}</id>}
+				</node-begins>
+				<node-ids>
+					{for $nodeId in $ids return <id>{data($nodeId)}</id>}
+				</node-ids>
+				<result>{$node}</result>
+				<meta>{$meta}</meta>
+				<variables>` + optVariableResults + `</variables>
+				` + optContextResults + `
+			</match>
+	)[position() = ` + strconv.Itoa(startIndex) + ` to ` + strconv.Itoa(endIndex) + `]`
 }
