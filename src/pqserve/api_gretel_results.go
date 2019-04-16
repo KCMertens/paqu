@@ -37,8 +37,8 @@ func unpack(s []string, vars ...*string) {
 
 type xPathVariable struct {
 	// skip variable declaration in xquery if name == $node, that variable is already defined
-	name string
-	path string
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 type gretelResultsPayload struct {
@@ -68,15 +68,15 @@ type innerXML struct {
 }
 
 type gretelXqueryResult struct {
-	SentenceID       string     `xml:"sentence-id"`
-	Sentence         innerXML   `xml:"sentence"`
-	NodeBegins       []string   `xml:"node-begins>id"`
-	NodeIDs          []string   `xml:"node-ids>id"`
-	Result           innerXML   `xml:"result"`
-	Meta             innerXML   `xml:"meta"`
-	Variables        []innerXML `xml:"variables>var"`
-	PreviousSentence string     `xml:"prevous-sentence"`
-	NextSentence     string     `xml:"next-sentence"`
+	SentenceID       string   `xml:"sentence-id"`
+	Sentence         innerXML `xml:"sentence"`
+	NodeBegins       []string `xml:"node-begins>id"`
+	NodeIDs          []string `xml:"node-ids>id"`
+	Result           innerXML `xml:"result"`
+	Meta             innerXML `xml:"meta"`
+	Variables        innerXML `xml:"vars"`
+	PreviousSentence string   `xml:"prevous-sentence"`
+	NextSentence     string   `xml:"next-sentence"`
 }
 
 // from gretel4 config.php
@@ -179,9 +179,10 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 		beginsMap[sentenceID] = strings.Join(result.NodeBegins, "-")
 		xmlSentencesMap[sentenceID] = result.Result.InnerXML
 		metaMap[sentenceID] = result.Meta.InnerXML
-		variablesMap[sentenceID] = ""
-		for _, variable := range result.Variables {
-			variablesMap[sentenceID] = variablesMap[sentenceID] + variable.InnerXML
+		if result.Variables.InnerXML != "" {
+			variablesMap[sentenceID] = "<vars>" + result.Variables.InnerXML + "</vars>" // client expects a certain data structure
+		} else {
+			variablesMap[sentenceID] = ""
 		}
 		originMap[sentenceID] = dactFile
 
@@ -269,9 +270,10 @@ func xquery_gretel_results(startIndex int, endIndex int, xpath string, context b
 	var optVariableDeclaration string
 	var optVariableResults string
 	for _, variable := range variables {
-		optVariableResults += "<var name=\"" + variable.name + "\">{'" + variable.name + "'/@*}</var>"
-		if variable.name != "$node" { // variable $node already exists in query
-			optVariableDeclaration += "let " + variable.name + " := ('" + variable.path + "')[1]"
+		optVariableResults += `<var name="` + variable.Name + `">{` + variable.Name + `/@*}</var>`
+
+		if variable.Name != "$node" { // variable $node already exists in query
+			optVariableDeclaration += "let " + variable.Name + " := (" + variable.Path + ")[1]\n"
 		}
 	}
 
@@ -298,7 +300,7 @@ func xquery_gretel_results(startIndex int, endIndex int, xpath string, context b
 				</node-ids>
 				<result>{$node}</result>
 				<meta>{$meta}</meta>
-				<variables>` + optVariableResults + `</variables>
+				<vars>` + optVariableResults + `</vars>
 				` + optContextResults + `
 			</match>
 	)[position() = ` + strconv.Itoa(startIndex) + ` to ` + strconv.Itoa(endIndex) + `]`
