@@ -59,11 +59,16 @@ func handleStatic(url string, handler func(*Context)) {
 
 // Wrap handler in complete context
 func handleFunc(url string, handler func(*Context)) {
+	oldURL := url
 	url = path.Join("/", url)
+	if strings.HasSuffix(oldURL, "/") {
+		url += "/"
+	}
+
 	http.HandleFunc(
 		url,
 		func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != url {
+			if !strings.HasPrefix(r.URL.Path, url) {
 				http.NotFound(w, r)
 				return
 			}
