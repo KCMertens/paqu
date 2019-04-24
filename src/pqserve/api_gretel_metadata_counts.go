@@ -3,41 +3,9 @@
 package main
 
 import (
-//     "github.com/pebbe/dbxml"
-
-    "fmt"
-//     "strconv"
-//     "strings"
-    // "encoding/json"
-//     "io/ioutil"
+	"fmt"
 )
 
-// type TreebankComponent struct {
-//     Database_id string  `json:"database_id"`
-//     Description string  `json:"description"`
-//     Sentences int       `json:"sentences"`
-//     Title string        `json:"title"`
-//     Words int           `json:"words"`
-// }
-
-// type TreebankMetadata struct {
-//     Field string    `json:"field"`
-//     Type string     `json:"type"` // 'text' | 'int' | 'date',
-//     Facet string    `json:"facet"` // 'checkbox' | 'slider' | 'range' | 'dropdown',
-//     Show bool       `json:"show"`
-    
-//     //minValue?: number | Date,
-//     //maxValue?: number | Date
-// }
-
-// type Treebank struct {
-//     Components map[string]TreebankComponent `json:"components"`
-//     Description string                      `json:"description"`
-//     Title string                            `json:"title"`
-//     Metadata []TreebankMetadata             `json:"metadata"`
-// }
-
-// corpus/component(?):metadatakey: count 
 type MetadataCountsResponse map[string]map[string]int
 
 // $router->map('POST', '/metadata_counts', function () {
@@ -51,7 +19,6 @@ type MetadataCountsResponse map[string]map[string]int
 //     header('Content-Type: application/json');
 //     echo json_encode($counts);
 // });
-
 
 // function get_metadata_counts($corpus, $components, $xpath)
 // {
@@ -88,7 +55,7 @@ type MetadataCountsResponse map[string]map[string]int
 //                 for $m in $n
 //                 let $v := $m/@value
 //                 group by $v
-//                 return element count { 
+//                 return element count {
 //                     attribute value {$v}, count($m)
 //                 }
 //             }
@@ -128,12 +95,11 @@ type MetadataCountsResponse map[string]map[string]int
 //     return $totals;
 // }
 
-
 func api_gretel_metadata_counts(q *Context) {
 
-    q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
-    q.w.Header().Set("Cache-Control", "no-cache")
-    q.w.Header().Add("Pragma", "no-cache")
+	q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	q.w.Header().Set("Cache-Control", "no-cache")
+	q.w.Header().Add("Pragma", "no-cache")
 
-    fmt.Fprint(q.w, "[]") // default seems to be an empty array, TODO this is weird... php cde indicates a map should be returned?
+	fmt.Fprint(q.w, "[]") // Metadata is unsupported for now
 }

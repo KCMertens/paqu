@@ -160,7 +160,7 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 	xmlSentencesMap := make(map[string]string)
 	metaMap := make(map[string]string)
 	variablesMap := make(map[string]string)
-	originMap := make(map[string]string) // database where the sentence originated - we store the name of the dactfile here for now
+	originMap := make(map[string]string) // database where the sentence originated - we store the name of the dactfile here
 
 	// read results
 	i := 0

@@ -8,11 +8,11 @@ import (
 	"github.com/pebbe/dbxml"
 )
 
+// Does not actually highlight, but allows retrieving the full xml tree for a given sentence.
 func api_gretel_highlight_tree(q *Context) {
 
 	pathSegments := strings.Split(q.r.URL.EscapedPath(), "/")
 	sentId := pathSegments[len(pathSegments)-1]
-	// db := pathSegments[len(pathSegments)-3]
 	dactFile := q.r.Form["db"][0]
 
 	db, errval := dbxml.OpenRead(dactFile)
@@ -36,8 +36,6 @@ func api_gretel_highlight_tree(q *Context) {
 	// read results
 	docs.Next()
 	result := docs.Match()
-
-	// result = highlight(result)
 
 	if result == "" {
 		gretelSendErr("Could not retrieve tree "+sentId, q, errors.New("Document not found"))

@@ -18,10 +18,9 @@ type gretelCountsPayload struct {
 }
 
 // In gretel4, the string key refers to a basex database (such as "LASSY_ID_WSU")
-// String key for us should probably refer to a dact file
+// String key for us referS to a dact file, using the full path on disk
 // It's important this map contains all keys in the Components property of the configured_treebanks response (api_gretel_configured_treebanks)
-// type gretelCountsResponse map[string]int
-type gretelCountsResponse map[string]interface{}
+type gretelCountsResponse map[string]int
 
 func api_gretel_treebank_counts(q *Context) {
 
@@ -36,16 +35,10 @@ func api_gretel_treebank_counts(q *Context) {
 		return
 	}
 
-	// gretelSendErr("kjshdkfjhsdf", q, errors.New(string(payload.DactFiles[0])))
-	// return
-
 	counts := make(gretelCountsResponse, 0)
 
 	for _, dactFile := range *payload.DactFiles {
-		db, errval := dbxml.OpenRead(dactFile) // dactfile should be the full path, on the client we store this in the component.id field
-
-		// gretelSendErr(dactFile, q, errors.New("test error"))
-		// return
+		db, errval := dbxml.OpenRead(dactFile)
 
 		if gretelSendErr("Error opening database "+dactFile, q, errval) {
 			return
@@ -64,23 +57,12 @@ func api_gretel_treebank_counts(q *Context) {
 			return
 		}
 
-		// i := 0
-		// for count.Next() {
-		// 	i++
-		// }
-
 		if !count.Next() {
 			gretelSendErr("", q, count.Error())
 			return
 		}
 		counts[dactFile], errval = strconv.Atoi(count.Value())
 
-		// a, errval := json.Marshal(count.Everything())
-		// counts[dactFile] = string(json.RawMessage(a)[:])
-
-		// count.Next()
-		// n, errval := strconv.Atoi(count.Match())
-		// counts[dactFile] = n
 		if gretelSendErr("Invalid query result "+count.Match(), q, errval) {
 			return
 		}
@@ -100,5 +82,4 @@ func api_gretel_treebank_counts(q *Context) {
 
 func createXquery(xpath string) string {
 	return "(count(collection()" + xpath + "))"
-	// return "5"
 }
