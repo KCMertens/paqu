@@ -24,16 +24,17 @@ extern "C" {
     };
 
     struct c_dbxml_docs_t {
-        DbXml::XmlDocument doc;
-        DbXml::XmlValue value;
-        DbXml::XmlResults it;
-        DbXml::XmlQueryContext context;
-        bool more;
-        std::string name;
-        std::string content;
-        std::string match;
-        bool error;
-        std::string errstring;
+	DbXml::XmlDocument doc;
+	DbXml::XmlValue value;
+	DbXml::XmlResults it;
+	DbXml::XmlQueryContext context;
+	bool more;
+	std::string name;
+	std::string content;
+	std::string match;
+	std::string result;
+	bool error;
+	std::string errstring;
     };
 
     struct c_dbxml_query_t {
@@ -236,28 +237,28 @@ extern "C" {
         return docs;
     }
 
-    c_dbxml_query c_dbxml_prepare_query(c_dbxml db, char const *query, int implicitCollection, char const **namespaces)
+    c_dbxml_query c_dbxml_prepare_query(c_dbxml db, char const *query, int useImplicitCollection, char const **namespaces)
     {
-        int i;
-        c_dbxml_query q;
-        q = new c_dbxml_query_t;
-        try {
-            q->context = db->manager.createQueryContext(DbXml::XmlQueryContext::LiveValues, DbXml::XmlQueryContext::Lazy);
-            q->context.setDefaultCollection(ALIAS);
-            for (i = 0; namespaces[i]; i += 2) {
-                q->context.setNamespace(namespaces[i], namespaces[i+1]);
-            }
-            q->expression = db->manager.prepare( implicitCollection ? std::string("collection('" ALIAS "')") + query : query, q->context);
-            q->error = false;
-            if (q->expression.isUpdateExpression()) {
-                q->errstring = "Update Expressions are not allowed";
-                q->error = true;
-            }
-        } catch (DbXml::XmlException const &xe) {
-            q->errstring = xe.what();
-            q->error = true;
-        }
-        return q;
+	int i;
+	c_dbxml_query q;
+	q = new c_dbxml_query_t;
+	try {
+	    q->context = db->manager.createQueryContext(DbXml::XmlQueryContext::LiveValues, DbXml::XmlQueryContext::Lazy);
+	    q->context.setDefaultCollection(ALIAS);
+	    for (i = 0; namespaces[i]; i += 2) {
+		q->context.setNamespace(namespaces[i], namespaces[i+1]);
+	    }
+	    q->expression = db->manager.prepare(useImplicitCollection ? std::string("collection('" ALIAS "')") + query : query, q->context);
+	    q->error = false;
+	    if (q->expression.isUpdateExpression()) {
+		q->errstring = "Update Expressions are not allowed";
+		q->error = true;
+	    }
+	} catch (DbXml::XmlException const &xe) {
+	    q->errstring = xe.what();
+	    q->error = true;
+	}
+	return q;
     }
 
     c_dbxml_docs c_dbxml_run_query(c_dbxml_query query)
@@ -267,7 +268,9 @@ extern "C" {
         docs->more = true;
         docs->context = query->context;
         try {
-            docs->it = query->expression.execute(docs->context, DbXml::DBXML_LAZY_DOCS | DbXml::DBXML_WELL_FORMED_ONLY);
+	    docs->it = query->expression.execute(docs->context,
+						 DbXml::DBXML_LAZY_DOCS | DbXml::DBXML_WELL_FORMED_ONLY
+						 );
             docs->error = false;
         } catch (DbXml::XmlException const &xe) {
             docs->more = false;
@@ -300,42 +303,35 @@ extern "C" {
 
     int c_dbxml_docs_next(c_dbxml_docs docs)
     {
-        if (docs->more) {
-            try {
-                docs->it.peek(docs->doc);
-                docs->it.peek(docs->value);
-                docs->more = docs->it.next(docs->doc);
-            } catch (DbXml::XmlException &ignore) {
-                try {
-                    docs->more = docs->it.next(docs->value);
-                    docs->doc = 0;
-                } catch (DbXml::XmlException &xe) {
-                    docs->errstring = xe.what();
-                    docs->error = true;
-                    docs->more = false;
-                }
-            }
-            docs->name.clear();
-            docs->content.clear();
-            docs->match.clear();
-        }
-        return docs->more ? 1 : 0;
+	if (docs->more) {
+	    try {
+		docs->it.peek(docs->value);
+		docs->more = docs->it.next(docs->doc);
+	    } catch (DbXml::XmlException &xe) {
+		docs->errstring = xe.what();
+		docs->error = true;
+		docs->more = false;
+	    }
+	    docs->name.clear();
+	    docs->content.clear();
+	    docs->match.clear();
+	    docs->result.clear();
+	}
+	return docs->more ? 1 : 0;
     }
 
     char const * c_dbxml_docs_name(c_dbxml_docs docs)
     {
-        if (docs->more && docs->doc && ! docs->name.size()) {
+	if (docs->more && ! docs->name.size())
             docs->name = docs->doc.getName();
-        }
 
         return docs->name.c_str();
     }
 
     char const * c_dbxml_docs_content(c_dbxml_docs docs)
     {
-        if (docs->more && docs->doc && ! docs->content.size()) {
+	if (docs->more && ! docs->content.size())
             docs->doc.getContent(docs->content);
-        }
 
         return docs->content.c_str();
     }
@@ -351,10 +347,11 @@ extern "C" {
 
     char const * c_dbxml_docs_value(c_dbxml_docs docs)
     {
-        std::string v = docs->value.asString();
-        char* r = new char[v.length()+1];
-        strcpy(r, v.c_str());
-        return r;
+	if (docs->more && ! docs->result.size()) {
+	    docs->result = docs->value.asString();
+	}
+
+	return docs->result.c_str();
     }
 
     void c_dbxml_docs_free(c_dbxml_docs docs)
@@ -404,4 +401,5 @@ extern "C" {
     {
         DbXml::dbxml_version(major, minor, patch);
     }
+
 }

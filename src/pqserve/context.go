@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
-	"path"
 	"strings"
 )
 
@@ -40,11 +39,13 @@ type Context struct {
 
 // Wrap handler in minimale context, net genoeg voor afhandelen statische pagina's
 func handleStatic(url string, handler func(*Context)) {
-	url = path.Join("/", url)
+	if !strings.HasPrefix(url, "/") {
+		url = "/" + url
+	}
 	http.HandleFunc(
 		url,
 		func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != url {
+			if r.URL.Path != url && !strings.HasSuffix(url, "/") {
 				http.NotFound(w, r)
 				return
 			}
@@ -52,23 +53,22 @@ func handleStatic(url string, handler func(*Context)) {
 				w: w,
 				r: r,
 			}
-			w.Header().Set("Access-Control-Allow-Origin", "*")
 			handler(q)
 		})
 }
 
 // Wrap handler in complete context
-func handleFunc(url string, handler func(*Context)) {
-	oldURL := url
-	url = path.Join("/", url)
-	if strings.HasSuffix(oldURL, "/") {
-		url += "/"
+func handleFunc(url string, handler func(*Context), options *HandlerOptions) {
+	if options == nil {
+		options = &HandlerOptions{}
 	}
-
+	if !strings.HasPrefix(url, "/") {
+		url = "/" + url
+	}
 	http.HandleFunc(
 		url,
 		func(w http.ResponseWriter, r *http.Request) {
-			if !strings.HasPrefix(r.URL.Path, url) {
+			if r.URL.Path != url && !strings.HasSuffix(url, "/") {
 				http.NotFound(w, r)
 				return
 			}
@@ -227,13 +227,13 @@ func handleFunc(url string, handler func(*Context)) {
 				}
 			}
 
+			if r.Method == "OPTIONS" && options.OptionsMethodHandler != nil {
+				options.OptionsMethodHandler(q)
+				return
+			}
+
 			// Verwerk input
 			switch r.Method {
-			case "OPTIONS":
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Accept-Language, Content-Language, Content-Type")
-				return
 			case "GET":
 				err = r.ParseForm()
 				if err != nil {
@@ -242,24 +242,24 @@ func handleFunc(url string, handler func(*Context)) {
 					return
 				}
 			case "POST":
-				if url != "/corsave" {
-					reader, err := r.MultipartReader()
-					if err == nil {
-						q.form, err = reader.ReadForm(10 * 1024 * 1024)
-						if err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							logerr(err)
-							return
-						}
+				reader, err := r.MultipartReader()
+				if err != nil && options.NeedForm {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					logerr(err)
+					return
+				}
+				if err == nil {
+					q.form, err = reader.ReadForm(10 * 1024 * 1024)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						logerr(err)
+						return
 					}
-					// let the implementation site figure it out
 				}
 			default:
 				http.Error(w, "Methode "+r.Method+" is niet toegestaan", http.StatusMethodNotAllowed)
 				return
 			}
-
-			w.Header().Set("Access-Control-Allow-Origin", "*")
 
 			// Update login-cookies
 			setcookie(q)

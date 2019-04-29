@@ -303,17 +303,37 @@ func (db *Db) All() (*Docs, error) {
 //          }
 //      }
 func (db *Db) Query(query string, namespaces ...Namespace) (*Docs, error) {
-	q, err := db.Prepare(query, true, namespaces...)
+	q, err := db.prepare(query, true, namespaces...)
 	if err != nil {
 		return &Docs{}, err
 	}
 	return q.Run()
 }
 
-// Prepare an XPATH query.
+// TODO: Get all... what?
+func (db *Db) QueryRaw(query string, namespaces ...Namespace) (*Docs, error) {
+	q, err := db.prepare(query, false, namespaces...)
+	if err != nil {
+		return &Docs{}, err
+	}
+	return q.Run()
+}
+
+// Prepare an XPATH query that runs on the default collection.
 //
 // The query can be run multiple times, and a running query can be cancelled by query.Cancel()
-func (db *Db) Prepare(query string, implicitCollection bool, namespaces ...Namespace) (*Query, error) {
+func (db *Db) Prepare(query string, namespaces ...Namespace) (*Query, error) {
+	return db.prepare(query, true, namespaces...)
+}
+
+// Prepare an XPATH query without setting the default collection.
+//
+// The query can be run multiple times, and a running query can be cancelled by query.Cancel()
+func (db *Db) PrepareRaw(query string, namespaces ...Namespace) (*Query, error) {
+	return db.prepare(query, false, namespaces...)
+}
+
+func (db *Db) prepare(query string, useImplicitCollection bool, namespaces ...Namespace) (*Query, error) {
 	q := &Query{}
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -331,7 +351,7 @@ func (db *Db) Prepare(query string, implicitCollection bool, namespaces ...Names
 	}
 
 	var ci C.int
-	if implicitCollection {
+	if useImplicitCollection {
 		ci = 1
 	}
 
@@ -437,10 +457,7 @@ func (docs *Docs) getNameContent(what int) string {
 	case 3:
 		return C.GoString(C.c_dbxml_docs_match(docs.docs))
 	case 4:
-		raw := C.c_dbxml_docs_value(docs.docs)
-		gs := C.GoString(raw)
-		C.free(unsafe.Pointer(raw))
-		return gs
+		return C.GoString(C.c_dbxml_docs_value(docs.docs))
 	}
 	return ""
 }

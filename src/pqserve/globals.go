@@ -67,9 +67,15 @@ type Config struct {
 	Access []AccessType
 }
 
+type HandlerOptions struct {
+	NeedForm             bool
+	OptionsMethodHandler func(*Context)
+}
+
 type LocalHandlerType struct {
 	path    string
 	handler func(*Context)
+	options *HandlerOptions
 }
 
 type LocalMenuType struct {

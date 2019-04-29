@@ -55,7 +55,6 @@ extern "C" {
     char const * c_dbxml_docs_name(c_dbxml_docs docs);
     char const * c_dbxml_docs_content(c_dbxml_docs docs);
     char const * c_dbxml_docs_match(c_dbxml_docs docs);
-    /** NOTE: returned pointer must be freed! */
     char const * c_dbxml_docs_value(c_dbxml_docs docs);
     void c_dbxml_docs_free(c_dbxml_docs docs);
     c_dbxml_query c_dbxml_prepare_query(c_dbxml db, char const *query, int useImplicitCollection, char const **namespaces);
