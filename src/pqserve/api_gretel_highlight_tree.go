@@ -10,6 +10,7 @@ import (
 
 // Does not actually highlight, but allows retrieving the full xml tree for a given sentence.
 func api_gretel_highlight_tree(q *Context) {
+	q.w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	pathSegments := strings.Split(q.r.URL.EscapedPath(), "/")
 	sentId := pathSegments[len(pathSegments)-1]
@@ -23,7 +24,7 @@ func api_gretel_highlight_tree(q *Context) {
 	xquery := xquery_gretel_highlight_tree(sentId)
 
 	var qu *dbxml.Query
-	qu, errval = db.Prepare(xquery, false, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
+	qu, errval = db.PrepareRaw(xquery)
 	if gretelSendErr("Invalid query: "+xquery, q, errval) {
 		return
 	}

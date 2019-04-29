@@ -36,6 +36,7 @@ type gretelTreebank struct {
 type gretelConfiguredTreebanksResponse map[string]gretelTreebank
 
 func api_gretel_configured_treebanks(q *Context) {
+	q.w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	treebanks := make(map[string]gretelTreebank)
 TREEBANKS:

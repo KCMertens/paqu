@@ -305,7 +305,7 @@ function init(s) {
 			} else if t == "FLOAT" {
 				rows, err := q.db.Query(fmt.Sprintf(
 					"SELECT MIN(`fval`), MAX(`fval`) FROM `%s_c_%s_meta` JOIN `%s_c_%s_midx` USING (`id`) WHERE `name` = %q AND `idx` != 2147483647",
-					true, 
+					true,
 					Cfg.Prefix, prefix,
 					Cfg.Prefix, prefix,
 					name))
@@ -489,7 +489,7 @@ init({
 			return
 		}
 
-		qu, err := db.Prepare(queryparts[0], true, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
+		qu, err := db.Prepare(queryparts[0])
 		if err != nil {
 			updateError(q, err, !download)
 			db.Close()

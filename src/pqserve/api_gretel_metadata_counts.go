@@ -96,6 +96,7 @@ type MetadataCountsResponse map[string]map[string]int
 // }
 
 func api_gretel_metadata_counts(q *Context) {
+	q.w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	q.w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	q.w.Header().Set("Cache-Control", "no-cache")

@@ -18,11 +18,15 @@ type gretelCountsPayload struct {
 }
 
 // In gretel4, the string key refers to a basex database (such as "LASSY_ID_WSU")
-// String key for us referS to a dact file, using the full path on disk
+// String key for us refers to a dact file, using the full path on disk
 // It's important this map contains all keys in the Components property of the configured_treebanks response (api_gretel_configured_treebanks)
 type gretelCountsResponse map[string]int
 
 func api_gretel_treebank_counts(q *Context) {
+
+	logf("%s", "this is a test, does this function even run??")
+
+	q.w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	requestBody, err := ioutil.ReadAll(q.r.Body)
 	if gretelSendErr("Error reading request body", q, err) {
@@ -47,7 +51,7 @@ func api_gretel_treebank_counts(q *Context) {
 		xquery := createXquery(payload.XPath)
 
 		var qu *dbxml.Query
-		qu, errval = db.Prepare(xquery, false, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
+		qu, errval = db.PrepareRaw(xquery)
 		if gretelSendErr("Invalid query "+xquery, q, errval) {
 			return
 		}

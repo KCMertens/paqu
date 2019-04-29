@@ -86,6 +86,8 @@ const searchPageSize = 50
 const analysisPageSize = 50000
 
 func api_gretel_results(q *Context) {
+	q.w.Header().Set("Access-Control-Allow-Origin", "*")
+
 	requestBody, err := ioutil.ReadAll(q.r.Body)
 	if gretelSendErr("Error reading request body", q, err) {
 		return
@@ -144,7 +146,7 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 	xquery := xquery_gretel_results(startIndex, endIndex, xpath, context, variables)
 
 	var qu *dbxml.Query
-	qu, errval = db.Prepare(xquery, false, dbxml.Namespace{Prefix: "ud", Uri: "http://www.let.rug.nl/alfa/unidep/"})
+	qu, errval = db.PrepareRaw(xquery)
 	if errval != nil {
 		return "", errors.New("Invalid query: " + xquery)
 	}
