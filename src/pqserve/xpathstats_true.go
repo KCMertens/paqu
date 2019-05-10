@@ -305,7 +305,6 @@ function init(s) {
 			} else if t == "FLOAT" {
 				rows, err := q.db.Query(fmt.Sprintf(
 					"SELECT MIN(`fval`), MAX(`fval`) FROM `%s_c_%s_meta` JOIN `%s_c_%s_midx` USING (`id`) WHERE `name` = %q AND `idx` != 2147483647",
-					true,
 					Cfg.Prefix, prefix,
 					Cfg.Prefix, prefix,
 					name))
