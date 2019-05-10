@@ -60,10 +60,16 @@ TREEBANKS:
 			treebanks[id].Components[dactfile.id] = gretelTreebankComponent{
 				ID:          dactfile.id,
 				Description: dactFileName,
-				Sentences:   q.lines[id],
+				Sentences:   func() interface{} {
+					if len(dactfiles) == 1 && q.lines[id] > 0 {
+						return q.lines[id]
+					} else {
+						return "?"
+					}
+				}
 				Title:       dactFileName,
 				Words: func() interface{} {
-					if q.words[id] > 0 {
+					if len(dactfiles) == 1 && q.words[id] > 0 {
 						return q.words[id]
 					}
 					return "?"
