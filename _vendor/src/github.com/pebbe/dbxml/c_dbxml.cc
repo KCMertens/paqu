@@ -303,45 +303,54 @@ extern "C" {
 
     int c_dbxml_docs_next(c_dbxml_docs docs)
     {
-        if (docs->more) {
-            try {
-                docs->it.peek(docs->doc);
-            } catch (DbXml::XmlException &ignore) {
-                // Result is not always of type document, but we don't know this until we try.
-                // Ignore the error - the document will be null.
-            }
+	// goal: advance to next result and get both doc and value
+	// do a peek() first to get the one, then next() to get the other and advance
+	if (docs->more) {
+	    try {
+		docs->it.peek(docs->doc);
+	    } catch (DbXml::XmlException &ignore) {
+		// Result is not always of type document, but we don't know this until we try.
+		docs->doc = NULL;
+	    }
 
-            try {
-                docs->more = docs->it.next(docs->value);
-            } catch (DbXml::XmlException &xe) {
-                // This should however always succeed, as the result is always an XmlValue
-                docs->errstring = xe.what();
-                docs->error = true;
-                docs->more = false;
-            }
+	    try {
+		docs->more = docs->it.next(docs->value);
+	    } catch (DbXml::XmlException &xe) {
+		// While there are more results, this should however always succeed, as the result is always an XmlValue
+		docs->errstring = xe.what();
+		docs->error = true;
+		docs->more = false;
+	    }
 
-            docs->name.clear();
-            docs->content.clear();
-            docs->match.clear();
-            docs->result.clear();
-        }
-        return docs->more ? 1 : 0;
+	    docs->name.clear();
+	    docs->content.clear();
+	    docs->match.clear();
+	    docs->result.clear();
+	}
+	return docs->more ? 1 : 0;
     }
 
     char const * c_dbxml_docs_name(c_dbxml_docs docs)
     {
-        if (docs->more && ! docs->name.size()) {
-            docs->name = docs->doc.getName();
-        }
+	if (docs->more && ! docs->name.size()) {
+	    if (docs->doc)
+		docs->name = docs->doc.getName();
+	    else
+		docs->name = "";
+	}
 
         return docs->name.c_str();
     }
 
     char const * c_dbxml_docs_content(c_dbxml_docs docs)
     {
-        if (docs->more && ! docs->content.size()) {
-            docs->doc.getContent(docs->content);
-        }
+	if (docs->more && ! docs->content.size()) {
+	    if (docs->doc) {
+		docs->doc.getContent(docs->content);
+	    } else {
+		docs->content = "";
+	    }
+	}
 
         return docs->content.c_str();
     }
