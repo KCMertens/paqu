@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"net/http"
 
 	"github.com/pebbe/dbxml"
 
@@ -96,6 +97,11 @@ func api_gretel_results(q *Context) {
 	var payload gretelResultsPayload
 	err = json.Unmarshal(requestBody, &payload)
 	if gretelSendErr("Invalid JSON in request body", q, err) {
+		return
+	}
+
+	if !mayAccess(q, payload.Corpus) {
+		http.Error(q.w, "", 403)
 		return
 	}
 

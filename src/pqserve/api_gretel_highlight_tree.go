@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/pebbe/dbxml"
@@ -15,8 +16,12 @@ func api_gretel_highlight_tree(q *Context) {
 	pathSegments := strings.Split(q.r.URL.EscapedPath(), "/")
 	sentId := pathSegments[len(pathSegments)-1]
 	corpus := pathSegments[len(pathSegments)-1]
-
 	dactFileID := q.r.Form["db"][0]
+
+	if !mayAccess(q, corpus) {
+		http.Error(q.w, "", 403)
+		return
+	}
 
 	dactFile, errval := getDactFileById(q.db, corpus, dactFileID)
 	if gretelSendErr("Error finding component "+dactFileID+" for corpus "+corpus, q, errval) {

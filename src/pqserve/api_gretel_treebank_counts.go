@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"strconv"
 
 	"github.com/pebbe/dbxml"
@@ -36,6 +37,11 @@ func api_gretel_treebank_counts(q *Context) {
 	var payload gretelCountsPayload
 	err = json.Unmarshal(requestBody, &payload)
 	if gretelSendErr("Invalid JSON in request body", q, err) {
+		return
+	}
+
+	if !mayAccess(q, payload.Corpus) {
+		http.Error(q.w, "", 403)
 		return
 	}
 

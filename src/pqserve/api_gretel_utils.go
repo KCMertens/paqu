@@ -66,6 +66,11 @@ func getDactFileById(db *sql.DB, corpus string, id string) (dactfile, error) {
 	return df, nil
 }
 
+func mayAccess(q *Context, corpus string) bool {
+	allowed, corpusExists := q.prefixes[corpus]
+	return corpusExists && allowed
+}
+
 func gretelSendErr(message string, q *Context, err error) bool {
 	if logerr(err) {
 		http.Error(q.w, message+": "+err.Error(), 500)
