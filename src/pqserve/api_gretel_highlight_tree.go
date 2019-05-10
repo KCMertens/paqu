@@ -14,10 +14,17 @@ func api_gretel_highlight_tree(q *Context) {
 
 	pathSegments := strings.Split(q.r.URL.EscapedPath(), "/")
 	sentId := pathSegments[len(pathSegments)-1]
-	dactFile := q.r.Form["db"][0]
+	corpus := pathSegments[len(pathSegments)-1]
 
-	db, errval := dbxml.OpenRead(dactFile)
-	if gretelSendErr("Cannot open database "+dactFile, q, errval) {
+	dactFileID := q.r.Form["db"][0]
+
+	dactFile, errval := getDactFileById(q.db, corpus, dactFileID)
+	if gretelSendErr("Error finding component "+dactFileID+" for corpus "+corpus, q, errval) {
+		return
+	}
+
+	db, errval := dbxml.OpenRead(dactFile.path)
+	if gretelSendErr("Error opening component database "+dactFile.path, q, errval) {
 		return
 	}
 

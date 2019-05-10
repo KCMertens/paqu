@@ -12,9 +12,9 @@ import (
 )
 
 type gretelCountsPayload struct {
-	DactFiles *[]string `json:"components"`
-	Corpus    string    `json:"corpus"`
-	XPath     string    `json:"xpath"`
+	DactFileIDs *[]string `json:"components"`
+	Corpus      string    `json:"corpus"`
+	XPath       string    `json:"xpath"`
 }
 
 // In gretel4, the string key refers to a basex database (such as "LASSY_ID_WSU")
@@ -41,10 +41,14 @@ func api_gretel_treebank_counts(q *Context) {
 
 	counts := make(gretelCountsResponse, 0)
 
-	for _, dactFile := range *payload.DactFiles {
-		db, errval := dbxml.OpenRead(dactFile)
+	for _, dactFileID := range *payload.DactFileIDs {
+		dactFile, errval := getDactFileById(q.db, payload.Corpus, dactFileID)
+		if gretelSendErr("Error finding component "+dactFileID+" for corpus "+payload.Corpus, q, errval) {
+			return
+		}
 
-		if gretelSendErr("Error opening database "+dactFile, q, errval) {
+		db, errval := dbxml.OpenRead(dactFile.path)
+		if gretelSendErr("Error opening component database "+dactFile.path, q, errval) {
 			return
 		}
 
@@ -65,7 +69,7 @@ func api_gretel_treebank_counts(q *Context) {
 			gretelSendErr("", q, count.Error())
 			return
 		}
-		counts[dactFile], errval = strconv.Atoi(count.Value())
+		counts[dactFile.id], errval = strconv.Atoi(count.Value())
 
 		if gretelSendErr("Invalid query result "+count.Match(), q, errval) {
 			return

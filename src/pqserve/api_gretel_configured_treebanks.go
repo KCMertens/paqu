@@ -54,11 +54,11 @@ TREEBANKS:
 		}
 
 		for _, dactfile := range dactfiles {
-			dactFileNameSplit := strings.FieldsFunc(dactfile, func(c rune) bool { return c == '/' || c == '\\' || c == '.' })
+			dactFileNameSplit := strings.FieldsFunc(dactfile.path, func(c rune) bool { return c == '/' || c == '\\' || c == '.' })
 			dactFileName := dactFileNameSplit[len(dactFileNameSplit)-2]
 
-			treebanks[id].Components[dactfile] = gretelTreebankComponent{
-				ID:          dactfile,
+			treebanks[id].Components[dactfile.id] = gretelTreebankComponent{
+				ID:          dactfile.id,
 				Description: dactFileName,
 				Sentences:   q.lines[id],
 				Title:       dactFileName,

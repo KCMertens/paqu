@@ -58,9 +58,9 @@ type gretelResultsPayload struct {
 
 	// Set of unprocessed components - pingponged between client and server (except on first request
 	//  in which case ComponentsToSearch is used)
-	RemainingDactFiles *[]string `json:"remainingDatabases"`
-	// subcomponents of the corpus to search, used to initialize RemainingComponents if present
-	DactFilesToSearch []string `json:"components"`
+	RemainingDactFileIDs *[]string `json:"remainingDatabases"`
+	// subcomponents of the corpus to search, used to initialize RemainingDactFileIDs if present
+	InitialDactFileIDs []string `json:"components"`
 }
 
 type innerXML struct {
@@ -80,9 +80,9 @@ type gretelXqueryResult struct {
 }
 
 // from gretel4 config.php
-const searchLimit = 500
+const searchLimit = 15
 const analysisLimit = 50000
-const searchPageSize = 50
+const searchPageSize = 10
 const analysisPageSize = 50000
 
 func api_gretel_results(q *Context) {
@@ -108,18 +108,26 @@ func api_gretel_results(q *Context) {
 
 	// This is a bit dumb, but whatever.
 	// If the client didn't supply files to search, search them all.
-	var remainingDactFiles = &payload.RemainingDactFiles
-	if *remainingDactFiles == nil {
-		files, err := getDactFiles(q.db, payload.Corpus)
-
+	var remainingDactFileIDs = payload.RemainingDactFileIDs
+	var remainingDactFiles = make([]dactfile, 0)
+	if remainingDactFileIDs == nil {
+		remainingDactFiles, err = getDactFiles(q.db, payload.Corpus)
 		if gretelSendErr("", q, err) {
 			return
 		}
-		*remainingDactFiles = &files
+	} else {
+		for _, id := range *remainingDactFileIDs {
+			var file dactfile
+			file, err = getDactFileById(q.db, payload.Corpus, id)
+			if gretelSendErr("Invalid dact file id "+id, q, err) {
+				return
+			}
+			remainingDactFiles = append(remainingDactFiles, file)
+		}
 	}
 
-	resultJSON, err := getResults(q, **remainingDactFiles, payload.Page, pageSize, searchLimit, payload.XPath, payload.Context, payload.Corpus, payload.Variables)
-	if gretelSendErr("", q, err) {
+	resultJSON, err := getResults(q, remainingDactFiles, payload.Page, pageSize, searchLimit, payload.XPath, payload.Context, payload.Corpus, payload.Variables)
+	if gretelSendErr("Error retrieving results", q, err) {
 		return
 	}
 
@@ -130,7 +138,7 @@ func api_gretel_results(q *Context) {
 	fmt.Fprint(q.w, resultJSON)
 }
 
-func getResults(q *Context, remainingDactFiles []string, page int, pageSize int, resultLimit int, xpath string, context bool, corpus string, variables []xPathVariable) (string, error) {
+func getResults(q *Context, remainingDactFiles []dactfile, page int, pageSize int, resultLimit int, xpath string, context bool, corpus string, variables []xPathVariable) (string, error) {
 	startIndex := (pageSize * page) + 1
 	endIndex := mini(pageSize*(page+1), resultLimit)
 	if startIndex >= endIndex || len(remainingDactFiles) == 0 {
@@ -138,9 +146,11 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 	}
 
 	dactFile := remainingDactFiles[0]
-	db, errval := dbxml.OpenRead(dactFile) // dactfile should be the full path, on the client we store this in the component.server_id field
+	db, errval := dbxml.OpenRead(dactFile.path)
 	if errval != nil {
-		return "", errors.New("Cannot open database " + dactFile)
+		// technically leaking path to file here, but this is an internal server error and should never happen.
+		// Also it helps with debugging
+		return "", errors.New("Cannot open database " + dactFile.path)
 	}
 
 	xquery := xquery_gretel_results(startIndex, endIndex, xpath, context, variables)
@@ -162,7 +172,7 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 	xmlSentencesMap := make(map[string]string)
 	metaMap := make(map[string]string)
 	variablesMap := make(map[string]string)
-	originMap := make(map[string]string) // database where the sentence originated - we store the name of the dactfile here
+	originMap := make(map[string]string) // database where the sentence originated - we store the id of the dactfile here
 
 	// read results
 	i := 0
@@ -186,16 +196,21 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 		} else {
 			variablesMap[sentenceID] = ""
 		}
-		originMap[sentenceID] = dactFile
+		originMap[sentenceID] = dactFile.id
 
 		i++
 	}
 
 	// done with this dact file, remove it from the remaining files
 	// and reset the page (it will be applied to the next dact file in the next request).
-	if (startIndex + i) < endIndex {
+	if i < pageSize {
 		remainingDactFiles = remainingDactFiles[1:]
 		page = -1 // We always increment current page by 1 so set to -1 to return page 0 to client
+	}
+
+	var remainingDactFileIds = make([]string, 0)
+	for _, file := range remainingDactFiles {
+		remainingDactFileIds = append(remainingDactFileIds, file.id)
 	}
 
 	// TODO we should search across multiple dact files if we haven't found enough results to fill a page yet
@@ -203,7 +218,7 @@ func getResults(q *Context, remainingDactFiles []string, page int, pageSize int,
 		// unused stuff, and meta info not extracted from the results directly
 		"success":            true,
 		"tblist":             make(map[string]string), // unused. Only for grinded corpora
-		"databases":          remainingDactFiles,
+		"databases":          remainingDactFileIds,
 		"endPosIteration":    page + 1,
 		"xquery":             xquery,
 		"already":            nil,   // for grinded databases, which is not used in paqu
