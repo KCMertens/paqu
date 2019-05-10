@@ -81,9 +81,9 @@ type gretelXqueryResult struct {
 }
 
 // from gretel4 config.php
-const searchLimit = 15
+const searchLimit = 500
 const analysisLimit = 50000
-const searchPageSize = 10
+const searchPageSize = 50
 const analysisPageSize = 50000
 
 func api_gretel_results(q *Context) {
