@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/rug-compling/alud/v2"
+
 	"bytes"
 	"fmt"
 	"html"
@@ -180,18 +182,25 @@ func getDepAttr(attr string, n *DepType) string {
 	return ""
 }
 
-func conllu2svg(q *Context, id int, alpino *Alpino_ds_complete, ctx *TreeContext) {
+func conllu2svg(q *Context, id int, alpino *Alpino_ds_complete, ctx *TreeContext, data []byte) {
 
 	fp := q.w
-	if alpino.Conllu == nil {
-		return
-	}
-	if alpino.Conllu.Status == "" {
-		return
+	if alpino.Conllu == nil || alpino.Conllu.Status == "" {
+		conllu, err := alud.Ud(data, "", alud.OPT_NO_COMMENTS|alud.OPT_NO_DETOKENIZE)
+		if err == nil {
+			alpino.Conllu = &ConlluType{Status: "OK", Conllu: conllu}
+		} else {
+			e := err.Error()
+			i := strings.Index(e, "\n")
+			if i > 0 {
+				e = e[:i]
+			}
+			alpino.Conllu = &ConlluType{Status: "error", Error: e}
+		}
 	}
 	if alpino.Conllu.Status != "OK" {
-		fmt.Fprintln(fp,
-			"<div style=\"margin:1em 0px;padding:1em 0px;border-top:1px solid grey\">Er was een fout in het afleiden van Universal Dependencies voor deze zin</div>")
+		fmt.Fprintf(fp,
+			"<div style=\"margin:1em 0px;padding:1em 0px;border-top:1px solid grey\">Er was een fout in het afleiden van Universal Dependencies voor deze zin: <em>%s</em></div>\n", html.EscapeString(alpino.Conllu.Error))
 		return
 	}
 

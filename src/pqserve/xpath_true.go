@@ -44,18 +44,18 @@ var (
 		"VerbForm":        true,
 		"auto":            true,
 		"deprel":          true,
-		"deprel_main":     true,
 		"deprel_aux":      true,
+		"deprel_main":     true,
 		"elided":          true,
-		"enhanced":        true,
 		"error":           true,
 		"form":            true,
 		"head":            true,
 		"id":              true,
 		"lemma":           true,
-		"status":          true,
-		"upos":            true,
 		"recursion_limit": true,
+		"status":          true,
+		"ud":              true,
+		"upos":            true,
 	}
 	xpathNames = map[string]bool{
 		"alpino_ds":            true,
@@ -154,6 +154,15 @@ var (
 		"root":       true,
 		"vocative":   true,
 		"xcomp":      true,
+	}
+
+	filters = map[[3]bool]string{
+		[3]bool{true, false, false}: "/(self::node|self::ud|self::dep)",
+		[3]bool{false, true, false}: "/self::*[@ud='basic']",
+		[3]bool{false, false, true}: "/self::*[@ud='enhanced']",
+		[3]bool{true, true, false}:  "/(self::node|self::ud|self::dep|self::*[@ud='basic'])",
+		[3]bool{true, false, true}:  "/(self::node|self::ud|self::dep|self::*[@ud='enhanced'])",
+		[3]bool{false, true, true}:  "/self::*[@ud]",
 	}
 )
 
@@ -321,7 +330,7 @@ func xpath(q *Context) {
 
 	// HTML-uitvoer van het formulier
 	// Returnwaarde is true als er een query was gedefinieerd
-	has_query := html_xpath_form(q, xpathmax)
+	has_query, fff := html_xpath_form(q, xpathmax)
 
 	// Als er geen query is gedefinieerd, HTML-uitvoer van korte helptekst, pagina-einde, en exit
 	if !has_query {
@@ -355,6 +364,8 @@ func xpath(q *Context) {
 	// hier begint het
 
 	query := first(q.r, "xpath")
+	oriquery := query
+	query += filters[fff]
 	now := time.Now()
 	curno, hash, loading, errval := xpath_do_search(q, query, prefix, methode, offset, xpathmax, chClose, true, 1)
 	if errval != nil {
@@ -369,7 +380,16 @@ func xpath(q *Context) {
 	}
 
 	// Links naar volgende en vorige pagina's met resultaten
-	qs := "xpath=" + urlencode(query) + "&amp;mt=" + methode
+	qs := "xpath=" + urlencode(oriquery) + "&amp;mt=" + methode
+	if fff[0] {
+		qs += "&A=1"
+	}
+	if fff[1] {
+		qs += "&U=1"
+	}
+	if fff[2] {
+		qs += "&E=1"
+	}
 	if offset > 0 || curno > offset+xpathmax {
 		if offset > 0 {
 			fmt.Fprintf(q.w, "<a href=\"xpath?%s&amp;offset=%d\">vorige</a>", qs, offset-xpathmax)
@@ -408,7 +428,7 @@ func xpath(q *Context) {
 <input type="submit" value="zinnen downloaden">
 </form>
 `,
-			html.EscapeString(first(q.r, "xpath")),
+			html.EscapeString(query),
 			html.EscapeString(prefix),
 			methode)
 	}
@@ -422,7 +442,7 @@ func xpath(q *Context) {
 <input type="submit" value="nieuw corpus maken op basis van deze zoekopdracht">
 </form>
 `,
-			html.EscapeString(first(q.r, "xpath")),
+			html.EscapeString(query),
 			html.EscapeString(prefix),
 			methode)
 	}
@@ -718,6 +738,9 @@ func html_xpath_header(q *Context) {
 
   function formclear(f) {
     f.xpath.value = "";
+    f.A.checked = false;
+    f.U.checked = false;
+    f.E.checked = false;
     xquery.css('background-color', '#ffffff');
   }
 
@@ -1149,15 +1172,26 @@ func html_xpath_header(q *Context) {
     }
   }
 
+  function limit(v, min, max) {
+    v = Number(v);
+    if (v < min) {
+      return min;
+    }
+    if (v > max) {
+      return max;
+    }
+    return v;
+  }
+
   function xsetsize() {
     var storageContent = localStorage.getItem("paqu-xpath-x");
     if (storageContent !== undefined) {
       var d = JSON.parse(storageContent) || {};
       if (d['w']) {
-        xquery.outerWidth(d['w']);
+        xquery.outerWidth(limit(d['w'], 400, 1000));
       }
       if (d['h']) {
-        xquery.outerHeight(d['h']);
+        xquery.outerHeight(limit(d['h'], 80, 600));
       }
     }
   }
@@ -1167,10 +1201,10 @@ func html_xpath_header(q *Context) {
     if (storageContent !== undefined) {
       var d = JSON.parse(storageContent) || {};
       if (d['w']) {
-        macrotext.outerWidth(d['w']);
+        macrotext.outerWidth(limit(d['w'], 400, 1000));
       }
       if (d['h']) {
-        macrotext.outerHeight(d['h']);
+        macrotext.outerHeight(limit(d['h'], 80, 600));
       }
     }
   }
@@ -1253,12 +1287,18 @@ Voorbeelden, zie:
 `)
 }
 
-func html_xpath_form(q *Context, xpathmax int) (has_query bool) {
+func html_xpath_form(q *Context, xpathmax int) (has_query bool, filter [3]bool) {
 	has_query = true
 	if first(q.r, "xpath") == "" {
 		has_query = false
 	}
 	methode := first(q.r, "mt")
+
+	filter = [3]bool{
+		first(q.r, "A") != "",
+		first(q.r, "U") != "",
+		first(q.r, "E") != "",
+	}
 
 	if q.auth {
 		macros := ""
@@ -1309,6 +1349,15 @@ corpus: <select name="db">
 		<textarea name="xpath" rows="6" cols="80" maxlength="1200" id="xquery">%s</textarea>
 		<p>
 		`, html.EscapeString(first(q.r, "xpath")))
+	fmt.Fprintf(q.w, `filter:
+<input type="checkbox" id="cbA" name="A"%v> <label for="cbA">Alpino</label> &nbsp;
+<input type="checkbox" id="cbU" name="U"%v> <label for="cbU">Basic UD</label> &nbsp;
+<input type="checkbox" id="cbE" name="E"%v> <label for="cbE">Enhanced UD</label>
+<p>
+`,
+		ifelse(filter[0], " checked", ""),
+		ifelse(filter[1], " checked", ""),
+		ifelse(filter[2], " checked", ""))
 	if Cfg.Dactx {
 		selected := ""
 		if methode == "dx" {
@@ -1567,11 +1616,23 @@ init();
 }
 
 func xpath_result(q *Context, curno int, dactfile, filename, xmlall string, xmlparts []string, prefix string, global bool) {
+
+	fout := func(err error, s string) {
+		s2 := fmt.Sprintf("<li>FOUT bij parsen van XML: %s\n<pre>%s</pre></li>\n", html.EscapeString(err.Error()), html.EscapeString(s))
+		fmt.Fprintf(q.w, `<script type="text/javascript"><!--
+$('ol').append(%q);
+//--></script>
+`, s2)
+		if ff, ok := q.w.(http.Flusher); ok {
+			ff.Flush()
+		}
+	}
+
 	seen := make(map[string]bool)
 	alpino := Alpino_ds{}
 	err := xml.Unmarshal([]byte(xmlall), &alpino)
 	if err != nil {
-		fmt.Fprintf(q.w, "FOUT bij parsen van XML: %s\n", html.EscapeString(err.Error()))
+		fout(err, xmlall)
 		return
 	}
 	woorden := strings.Fields(alpino.Sentence)
@@ -1584,7 +1645,7 @@ func xpath_result(q *Context, curno int, dactfile, filename, xmlall string, xmlp
 	for i, part := range xmlparts {
 
 		var isUd, isDep, isId, isEid bool
-		var ID string
+		var ID, Head, Deprel string
 
 		if strings.HasPrefix(part, "<node") {
 			// isNode
@@ -1596,12 +1657,14 @@ func xpath_result(q *Context, curno int, dactfile, filename, xmlall string, xmlp
 			var alpino_test Alpino_test
 			err := xml.Unmarshal([]byte(part), &alpino_test)
 			if err != nil {
-				fmt.Fprintf(q.w, "FOUT bij parsen van XML: %s\n", html.EscapeString(err.Error()))
+				fout(err, part)
 				return
 			}
 			if alpino_test.Id != "" {
 				ID = alpino_test.Id
-				if alpino_test.Enhanced {
+				Head = alpino_test.Head
+				Deprel = alpino_test.Deprel
+				if alpino_test.Ud == "enhanced" {
 					isEid = true
 				} else {
 					isId = true
@@ -1612,18 +1675,10 @@ func xpath_result(q *Context, curno int, dactfile, filename, xmlall string, xmlp
 		alp := Alpino_ds{}
 
 		if isId {
-			alp.Node0 = &Node{
-				Ud:       findUdId(alpino.Node0, ID),
-				NodeList: make([]*Node, 0),
-			}
+			alp.Node0 = findUdId(alpino.Node0, ID)
 			isUd = true
 		} else if isEid {
-			alp.Node0 = &Node{
-				Ud: &UdType{
-					Dep: []DepType{*findDepId(alpino.Node0, ID)},
-				},
-				NodeList: make([]*Node, 0),
-			}
+			alp.Node0 = findDepId(alpino.Node0, ID, Head, Deprel)
 			isDep = true
 		}
 
@@ -1636,7 +1691,7 @@ func xpath_result(q *Context, curno int, dactfile, filename, xmlall string, xmlp
 </node>
 </alpino_ds>`), &alp)
 				if err != nil {
-					fmt.Fprintf(q.w, "FOUT bij parsen van XML: %s\n", html.EscapeString(err.Error()))
+					fout(err, part)
 					return
 				}
 			}
@@ -1655,7 +1710,7 @@ func xpath_result(q *Context, curno int, dactfile, filename, xmlall string, xmlp
 </node>
 </alpino_ds>`), &alp)
 				if err != nil {
-					fmt.Fprintf(q.w, "FOUT bij parsen van XML: %s\n", html.EscapeString(err.Error()))
+					fout(err, part)
 					return
 				}
 			}
@@ -1671,7 +1726,7 @@ func xpath_result(q *Context, curno int, dactfile, filename, xmlall string, xmlp
 `+part+`
 </alpino_ds>`), &alp)
 			if err != nil {
-				fmt.Fprintf(q.w, "FOUT bij parsen van XML: %s\n", html.EscapeString(err.Error()))
+				fout(err, part)
 				return
 			}
 			if alp.Node0 != nil {
@@ -1812,9 +1867,9 @@ func bugtest(filename, xpath string) error {
 	return e
 }
 
-func findUdId(node *Node, ID string) *UdType {
+func findUdId(node *Node, ID string) *Node {
 	if node.Ud != nil && node.Ud.Id == ID {
-		return node.Ud
+		return node
 	}
 	for _, n := range node.NodeList {
 		if ud := findUdId(n, ID); ud != nil {
@@ -1824,16 +1879,24 @@ func findUdId(node *Node, ID string) *UdType {
 	return nil
 }
 
-func findDepId(node *Node, ID string) *DepType {
+func findDepId(node *Node, ID string, head string, deprel string) *Node {
 	if node.Ud != nil && node.Ud.Dep != nil {
 		for _, d := range node.Ud.Dep {
-			if d.Id == ID {
-				return &d
+			if d.Id == ID && d.Head == head && d.Deprel == deprel {
+				if len(node.Ud.Dep) == 1 {
+					return node
+				}
+				n := *node // kopie
+				n.NodeList = nil
+				ud := *node.Ud // kopie
+				ud.Dep = []DepType{d}
+				n.Ud = &ud
+				return &n
 			}
 		}
 	}
 	for _, n := range node.NodeList {
-		if dep := findDepId(n, ID); dep != nil {
+		if dep := findDepId(n, ID, head, deprel); dep != nil {
 			return dep
 		}
 	}

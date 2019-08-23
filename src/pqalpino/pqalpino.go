@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/pebbe/util"
+	"github.com/rug-compling/alud/v2"
 
 	"bytes"
 	"encoding/json"
@@ -57,6 +58,8 @@ var (
 	opt_s = flag.String("s", "", "URL van Alpino-server")
 	opt_t = flag.Int("t", 900, "time-out in seconden per regel")
 	opt_T = flag.Bool("T", false, "true: zinnen zijn getokeniseerd")
+	opt_u = flag.String("u", "", "output file for UD errors (impliceert -U)")
+	opt_U = flag.Bool("U", false, "true: derive Universal Dependencies")
 
 	x             = util.CheckErr
 	reParser      = regexp.MustCompile(`<parser.*?>`)
@@ -90,6 +93,8 @@ Overige opties:
   -n int    : Maximum aantal tokens per regel (default: 0 = geen limiet)
   -p string : Alternatieve parser, zoals qa (default: geen)
   -t int    : Time-out per regel (default: 900)
+  -U        : Derive Universal Dependencies (UD) (default: nee)
+  -u string : Output file for UD errors (impliceert -U) (default: geen)
 
 Opties alleen van toepassing bij gebruik van Alpino-server:
 
@@ -137,6 +142,12 @@ func doLocal() {
 	b, err := ioutil.ReadFile(os.Getenv("ALPINO_HOME") + "/version")
 	x(err)
 	alpino_build = strings.TrimSpace(string(b))
+
+	var fpud *os.File
+	if *opt_u != "" {
+		fpud, err = os.Create(*opt_u)
+		x(err)
+	}
 
 	var fpin, fpout *os.File
 	var errval error
@@ -245,7 +256,7 @@ Q#%s|skipped|??|????
 			break
 		}
 	}
-	// version en date invoegen
+	// UD, version en date invoegen
 	filenames := make([]string, 0)
 	x(filepath.Walk(*opt_d, func(path string, info os.FileInfo, err error) error {
 		x(err)
@@ -261,10 +272,24 @@ Q#%s|skipped|??|????
 			continue
 		}
 		xml := setBuild(string(b))
+		if *opt_U || *opt_u != "" {
+			s, err := alud.UdAlpino([]byte(xml), filename)
+			if s != "" {
+				xml = s
+			}
+			if err != nil && *opt_u != "" {
+				fmt.Fprintln(fpud, ">>>", filename)
+				fmt.Fprintln(fpud, "^^^", err)
+				fmt.Fprintln(fpud)
+			}
+		}
 		fp, err := os.Create(filename)
 		x(err)
 		fp.WriteString(xml)
 		fp.Close()
+	}
+	if *opt_u != "" {
+		x(fpud.Close())
 	}
 }
 
@@ -287,6 +312,13 @@ func doServerInfo() (*AlpinoInfo, error) {
 
 func doServer(info *AlpinoInfo) {
 	alpino_build = info.ParserBuild
+
+	var fpud *os.File
+	var err error
+	if *opt_u != "" {
+		fpud, err = os.Create(*opt_u)
+		x(err)
+	}
 
 	var buf bytes.Buffer
 	var dataType string
@@ -326,7 +358,7 @@ func doServer(info *AlpinoInfo) {
 	if response.Code > 299 {
 		x(fmt.Errorf("%d %s -- %s", response.Code, response.Status, response.Message))
 	}
-	maxinterval := response.Interval
+	maxinterval := (response.Interval * 100) / 80
 	totallines := response.Number_of_lines
 	id := response.Id
 	if !*opt_q {
@@ -359,6 +391,7 @@ func doServer(info *AlpinoInfo) {
 	seen := 0
 	interval := 2
 	incr := true
+	moment := time.Now()
 	for {
 		if interval > maxinterval {
 			interval = maxinterval
@@ -366,15 +399,22 @@ func doServer(info *AlpinoInfo) {
 		if interval > 120 {
 			interval = 120
 		}
-		time.Sleep(time.Duration(interval) * time.Second)
+
+		if sleep := time.Duration(interval)*time.Second - time.Now().Sub(moment); sleep > 0 {
+			time.Sleep(sleep)
+		}
 
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, `{"request":"output", "id":%q}`, id)
 		resp, err := http.Post(*opt_s, "application/json", &buf)
 		util.CheckErr(err)
+
+		moment = time.Now()
+
 		data, err := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		util.CheckErr(err)
+
 		var response Response
 		err = json.Unmarshal(data, &response)
 		util.CheckErr(err)
@@ -395,12 +435,23 @@ func doServer(info *AlpinoInfo) {
 					line.Label = fmt.Sprint(line.Line_number)
 				}
 				filename := filepath.Join(*opt_d, line.Label+".xml")
+				if *opt_U || *opt_u != "" {
+					s, err := alud.UdAlpino([]byte(line.Alpino_ds), filename)
+					if s != "" {
+						line.Alpino_ds = s
+					}
+					if err != nil && *opt_u != "" {
+						fmt.Fprintln(fpud, ">>>", filename)
+						fmt.Fprintln(fpud, "^^^", err)
+						fmt.Fprintln(fpud)
+					}
+				}
 				dirname := filepath.Dir(filename)
 				if dirname != lastdir {
 					lastdir = dirname
 					os.MkdirAll(dirname, 0777)
 				}
-				fp, err := os.Create(filepath.Join(*opt_d, line.Label+".xml"))
+				fp, err := os.Create(filename)
 				x(err)
 				fmt.Fprintln(fp, setBuild(line.Alpino_ds))
 				fp.Close()
@@ -431,6 +482,9 @@ Q#%s|%s|%s|??|????
 		if incr {
 			interval = (3 * interval) / 2
 		}
+	}
+	if *opt_u != "" {
+		x(fpud.Close())
 	}
 }
 

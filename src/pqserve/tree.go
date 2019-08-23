@@ -298,7 +298,7 @@ func tree(q *Context) {
 
 	unexpand(alpino.Node0)
 
-	title := html.EscapeString(alpino.Sent)
+	title := html.EscapeString(alpino.Sentence.Sent)
 	ctx.words = strings.Fields(title)
 
 	// Multi-word units "ineenvouwen".
@@ -498,7 +498,7 @@ func tree(q *Context) {
 
 	fmt.Fprintf(q.w, "bestand: <a href=\"tree?%s&amp;xml=1\">%s</a>\n", strings.Replace(q.r.URL.RawQuery, "&", "&amp;", -1), html.EscapeString(label))
 
-	conllu2svg(q, 1, &alpino, ctx)
+	conllu2svg(q, 1, &alpino, ctx, data)
 
 	fmt.Fprint(q.w, "\n</body>\n</html>\n")
 

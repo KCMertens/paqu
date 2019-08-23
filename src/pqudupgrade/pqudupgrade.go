@@ -17,10 +17,12 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 //. Types
@@ -120,8 +122,44 @@ Usage: %s regexp
 		}
 	}
 
+	var lockfile string
+
+	go func() {
+		chSignal := make(chan os.Signal, 1)
+		signal.Notify(chSignal, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+		<-chSignal
+		os.Remove(lockfile)
+		os.Exit(1)
+	}()
+
 	for teller, corpus := range corpora {
-		fmt.Printf("Updating: [%d/%d] %s\n", teller+1, len(corpora), corpus.id)
+
+		lockfile = corpus.id + "/lock"
+		if os.Symlink(fmt.Sprintf("%s.%d", lockfile, os.Getpid()), lockfile) != nil {
+			fmt.Printf("Locked:     [%d/%d] %s\n", teller+1, len(corpora), corpus.id)
+			continue
+		}
+
+		up_to_date := false
+		for {
+			b, err := ioutil.ReadFile(corpus.id + "/conllu.version")
+			if err != nil {
+				break
+			}
+			s := strings.TrimSpace(string(b))
+			if s != version {
+				break
+			}
+			up_to_date = true
+			break
+		}
+		if up_to_date {
+			fmt.Printf("Up to date: [%d/%d] %s\n", teller+1, len(corpora), corpus.id)
+			os.Remove(lockfile)
+			continue
+		}
+
+		fmt.Printf("Updating:   [%d/%d] %s\n", teller+1, len(corpora), corpus.id)
 
 		status := readStatus(corpus.id)
 
@@ -135,7 +173,7 @@ Usage: %s regexp
 			fp, err := os.Create(corpus.id + "/conllu.err.tmp")
 			x(err)
 			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
+				line := strings.TrimRight(scanner.Text(), "\n")
 				if strings.HasSuffix(line, ".xml.gz") {
 					line = line[:len(line)-3]
 				}
@@ -180,6 +218,8 @@ Usage: %s regexp
 		x(err)
 		fmt.Fprintln(fp, version)
 		fp.Close()
+
+		os.Remove(lockfile)
 	}
 }
 
