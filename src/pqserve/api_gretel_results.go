@@ -43,25 +43,27 @@ type xPathVariable struct {
 }
 
 type gretelResultsPayload struct {
-	// The xpath expression to query the db
-	XPath string `json:"xpath"`
+	// Corpus to search
+	Corpus string `json:"corpus"`
+	// Is this an analysis request?, meaning the limit on the results returned is higher.
+	Analysis bool `json:"isAnalysis"`
+	// the page that's being requested, maps to a set of results at a specific offset
+	Page int `json:"iteration"`
+	// Set of components to search - pingponged between client and server - when null, all components are put in the array and searched)
+	// The component being searched this request is at index 0
+	RemainingDactFileIDs *[]string `json:"remainingComponents"`
 	// Retrieve the preceding and following sentences.
 	// This appears to be UNSUPPORTED in dbxml
 	Context bool `json:"retrieveContext"`
-	// corpus to search
-	Corpus string `json:"corpus"`
 	// variables to also output
 	Variables []xPathVariable `json:"variables"`
-	// the page that's being requested, maps to a set of results at a specific offset
-	Page int `json:"iteration"`
-	// Is this an analysis request, means larger result subsets are returned?
-	Analysis bool `json:"isAnalysis"`
+	// The xpath expression to query the db
+	XPath string `json:"xpath"`
 
-	// Set of unprocessed components - pingponged between client and server (except on first request
-	//  in which case ComponentsToSearch is used)
-	RemainingDactFileIDs *[]string `json:"remainingDatabases"`
-	// subcomponents of the corpus to search, used to initialize RemainingDactFileIDs if present
-	InitialDactFileIDs []string `json:"components"`
+	// Ignored parameters:
+	// needregulargrinded
+	// remainingDatabases
+	// seachlimit
 }
 
 type innerXML struct {
@@ -155,7 +157,7 @@ func getResults(q *Context, remainingDactFiles []dactfile, page int, pageSize in
 	db, errval := dbxml.OpenRead(dactFile.path)
 	if errval != nil {
 		// technically leaking path to file here, but this is an internal server error and should never happen.
-		// Also it helps with debugging
+		// Mostly it just helps with debugging should it ever happen
 		return "", errors.New("Cannot open database " + dactFile.path)
 	}
 
@@ -207,6 +209,7 @@ func getResults(q *Context, remainingDactFiles []dactfile, page int, pageSize in
 		i++
 	}
 
+	// less results returned by query than requested, i.e. we got all of them:
 	// done with this dact file, remove it from the remaining files
 	// and reset the page (it will be applied to the next dact file in the next request).
 	if i < pageSize {
@@ -214,6 +217,7 @@ func getResults(q *Context, remainingDactFiles []dactfile, page int, pageSize in
 		page = -1 // We always increment current page by 1 so set to -1 to return page 0 to client
 	}
 
+	// Map the files back to their ids to send back to the client
 	var remainingDactFileIds = make([]string, 0)
 	for _, file := range remainingDactFiles {
 		remainingDactFileIds = append(remainingDactFileIds, file.id)
@@ -221,24 +225,21 @@ func getResults(q *Context, remainingDactFiles []dactfile, page int, pageSize in
 
 	// TODO we should search across multiple dact files if we haven't found enough results to fill a page yet
 	result := map[string]interface{}{
-		// unused stuff, and meta info not extracted from the results directly
-		"success":            true,
-		"tblist":             make(map[string]string), // unused. Only for grinded corpora
-		"databases":          remainingDactFileIds,
-		"endPosIteration":    page + 1,
-		"xquery":             xquery,
-		"already":            nil,   // for grinded databases, which is not used in paqu
-		"needRegularGrinded": false, // likewise
-		"searchLimit":        resultLimit,
-
-		"sentences":         sentenceMap,
-		"idlist":            nodeIDMap,
-		"beginlist":         beginsMap,
-		"xmllist":           xmlSentencesMap,
-		"metalist":          metaMap,
-		"varlist":           variablesMap,
-		"sentenceDatabases": originMap,
-	}
+		"beginlist":           beginsMap,
+		"endPosIteration":     page + 1,
+		"idlist":              nodeIDMap,
+		"metalist":            metaMap,
+		"needRegularGrinded":  false,
+		"remainingComponents": remainingDactFileIds,
+		"remainingDatabases":  remainingDactFileIds,
+		"searchLimit":         resultLimit,
+		"sentenceDatabases":   originMap,
+		"sentences":           sentenceMap,
+		"success":             true,
+		"tblist":              false,
+		"varlist":             variablesMap,
+		"xmllist":             xmlSentencesMap,
+		"xquery":              xquery}
 
 	rbyte, errval := json.Marshal(result)
 	if errval != nil {

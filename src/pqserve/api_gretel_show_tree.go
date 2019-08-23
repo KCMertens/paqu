@@ -10,13 +10,14 @@ import (
 )
 
 // Does not actually highlight, but allows retrieving the full xml tree for a given sentence.
-func api_gretel_highlight_tree(q *Context) {
+func api_gretel_show_tree(q *Context) {
 	q.w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	// [${corpus}, ${dactfile}, ${sentenceid}]
 	pathSegments := strings.Split(q.r.URL.EscapedPath(), "/")
-	sentId := pathSegments[len(pathSegments)-1]
-	corpus := pathSegments[len(pathSegments)-1]
-	dactFileID := q.r.Form["db"][0]
+	sentID := pathSegments[len(pathSegments)-1]
+	dactFileID := pathSegments[len(pathSegments)-2]
+	corpus := pathSegments[len(pathSegments)-3]
 
 	if !mayAccess(q, corpus) {
 		http.Error(q.w, "", 403)
@@ -33,7 +34,7 @@ func api_gretel_highlight_tree(q *Context) {
 		return
 	}
 
-	xquery := xquery_gretel_highlight_tree(sentId)
+	xquery := xquery_gretel_show_tree(sentID)
 
 	var qu *dbxml.Query
 	qu, errval = db.PrepareRaw(xquery)
@@ -51,7 +52,7 @@ func api_gretel_highlight_tree(q *Context) {
 	result := docs.Match()
 
 	if result == "" {
-		gretelSendErr("Could not retrieve tree "+sentId, q, errors.New("Document not found"))
+		gretelSendErr("Could not retrieve tree "+sentID, q, errors.New("Document not found"))
 		return
 	}
 
@@ -62,10 +63,10 @@ func api_gretel_highlight_tree(q *Context) {
 	fmt.Fprint(q.w, result)
 }
 
-func xquery_gretel_highlight_tree(sentId string) string {
+func xquery_gretel_show_tree(sentID string) string {
 	return `
 	for $match in collection() 
-		where dbxml:metadata('dbxml:name', $match) = "` + sentId + `"
+		where dbxml:metadata('dbxml:name', $match) = "` + sentID + `"
 			return $match
 	`
 }

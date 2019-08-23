@@ -24,9 +24,6 @@ type gretelCountsPayload struct {
 type gretelCountsResponse map[string]int
 
 func api_gretel_treebank_counts(q *Context) {
-
-	logf("%s", "this is a test, does this function even run??")
-
 	q.w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	requestBody, err := ioutil.ReadAll(q.r.Body)
