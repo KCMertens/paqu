@@ -3,6 +3,7 @@ package main
 //. Imports
 
 import (
+	"github.com/go-sql-driver/mysql"
 	"github.com/pebbe/util"
 
 	"bytes"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -43,6 +45,8 @@ func init() {
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	mysql.SetLogger(LogWriter{prefix: "MYSQL: "})
 
 	for _, arg := range os.Args[1:] {
 		if arg == "-v" {
@@ -228,6 +232,7 @@ func main() {
 	handleFunc("spodlist", spod_list, nil)
 
 	handleStatic("debug/env", environment)
+	handleStatic("debug/stack", stacktrace)
 
 	handleStatic("busy.gif", static_busy_gif)
 	handleStatic("clariah.png", static_clariah_png)
@@ -260,10 +265,16 @@ func main() {
 
 	var errserve error
 	addr := fmt.Sprint(":", Cfg.Port)
+	server := http.Server{
+		Addr:     addr,
+		ErrorLog: log.New(LogWriter{prefix: "SERVER: "}, "", 0),
+	}
 	if !Cfg.Https && !Cfg.Httpdual {
-		errserve = http.ListenAndServe(addr, Log(http.DefaultServeMux))
+		server.Handler = Log(http.DefaultServeMux)
+		errserve = server.ListenAndServe()
 	} else if Cfg.Https && !Cfg.Httpdual {
-		errserve = http.ListenAndServeTLS(addr, filepath.Join(paquconfigdir, "cert.pem"), filepath.Join(paquconfigdir, "key.pem"), Log(http.DefaultServeMux))
+		server.Handler = Log(http.DefaultServeMux)
+		errserve = server.ListenAndServeTLS(filepath.Join(paquconfigdir, "cert.pem"), filepath.Join(paquconfigdir, "key.pem"))
 	} else {
 
 		// De ingewikkelde oplossing: acepteer zowel http als https.
@@ -277,22 +288,21 @@ func main() {
 		util.CheckErr(err)
 		ln, err := net.Listen("tcp", addr)
 		util.CheckErr(err)
-		errserve = http.Serve(
-			&SplitListener{Listener: ln},
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.TLS == nil {
-					u := url.URL{
-						Scheme:   "https",
-						Host:     r.Host,
-						Path:     r.URL.Path,
-						RawQuery: r.URL.RawQuery,
-						Fragment: r.URL.Fragment,
-					}
-					http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
-				} else {
-					Log(http.DefaultServeMux).ServeHTTP(w, r)
+		server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.TLS == nil {
+				u := url.URL{
+					Scheme:   "https",
+					Host:     r.Host,
+					Path:     r.URL.Path,
+					RawQuery: r.URL.RawQuery,
+					Fragment: r.URL.Fragment,
 				}
-			}))
+				http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+			} else {
+				Log(http.DefaultServeMux).ServeHTTP(w, r)
+			}
+		})
+		errserve = server.Serve(&SplitListener{Listener: ln})
 	}
 	logerr(errserve)
 

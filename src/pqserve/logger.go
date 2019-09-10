@@ -8,8 +8,23 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
+
+type LogWriter struct {
+	prefix string
+}
+
+func (l LogWriter) Write(p []byte) (n int, err error) {
+	n = len(p)
+	chLog <- l.prefix + strings.TrimSpace(string(p))
+	return
+}
+
+func (l LogWriter) Print(v ...interface{}) {
+	chLog <- l.prefix + strings.TrimSpace(fmt.Sprint(v...))
+}
 
 func logf(format string, v ...interface{}) {
 	chLog <- fmt.Sprintf(format, v...)
