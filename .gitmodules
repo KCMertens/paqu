@@ -1,0 +1,4 @@
+[submodule "src/pqserve/gretel"]
+	path = src/pqserve/gretel
+	url = https://github.com/INL/paqu-federated-extension.git
+	branch = gretel-extension
